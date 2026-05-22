@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local runtime / generated output
+*.log
+
+# Tool output files
+nmap_last.txt
+nmap_last.xml
+nmap_last.html
+netcat_last.txt
+speedtest_last.txt
+ping_last.txt
+traceroute_last.txt
+
+# Splash image (local/custom)
+**/splash-h.png
