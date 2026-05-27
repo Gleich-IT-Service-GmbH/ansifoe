@@ -41,12 +41,21 @@ class MenuApp:
 
         # Tool settings
         self.nmap_profile = "ping"
+
         self.netcat_port = 80
+
         self.speedtest_secure = True
+
         self.ping_target = "gateway"
         self.ping_count = 4
+
         self.traceroute_target = "gateway"
         self.traceroute_max_hops = 20
+
+        self.iperf_server = "gateway"
+        self.iperf_port = 5001
+        self.iperf_tradeoff = False
+        self.iperf_duration = 10
 
         self.iperf3_server = "gateway"
         self.iperf3_port = 5201
@@ -57,10 +66,12 @@ class MenuApp:
         self.nmap_text_output_file = os.path.expanduser("~/nmap_last.txt")
         self.nmap_xml_output_file = os.path.expanduser("~/nmap_last.xml")
         self.nmap_html_output_file = os.path.expanduser("~/nmap_last.html")
+
         self.netcat_output_file = os.path.expanduser("~/netcat_last.txt")
         self.speedtest_output_file = os.path.expanduser("~/speedtest_last.txt")
         self.ping_output_file = os.path.expanduser("~/ping_last.txt")
         self.traceroute_output_file = os.path.expanduser("~/traceroute_last.txt")
+        self.iperf_output_file = os.path.expanduser("~/iperf_last.txt")
         self.iperf3_output_file = os.path.expanduser("~/iperf3_last.txt")
 
         self.root_menu = self.build_menu()
@@ -104,6 +115,11 @@ class MenuApp:
             MenuItem("Last Result", action=self.show_last_traceroute_result),
         ]
 
+        tools_iperf_menu = [
+            MenuItem("Run", action=self.run_iperf),
+            MenuItem("Last Result", action=self.show_last_iperf_result),
+        ]
+
         tools_iperf3_menu = [
             MenuItem("Run", action=self.run_iperf3),
             MenuItem("Last Result", action=self.show_last_iperf3_result),
@@ -115,6 +131,7 @@ class MenuApp:
             MenuItem("Speedtest", submenu=tools_speedtest_menu),
             MenuItem("Ping", submenu=tools_ping_menu),
             MenuItem("Traceroute", submenu=tools_traceroute_menu),
+            MenuItem("Iperf", submenu=tools_iperf_menu),
             MenuItem("Iperf3", submenu=tools_iperf3_menu),
         ]
 
@@ -181,6 +198,35 @@ class MenuApp:
             MenuItem("Max Hops", submenu=traceroute_hops_menu),
         ]
 
+        iperf_server_menu = [
+            MenuItem("Gateway", action=lambda: self.set_iperf_server("gateway")),
+            MenuItem("192.168.1.1", action=lambda: self.set_iperf_server("192.168.1.1")),
+            MenuItem("192.168.1.10", action=lambda: self.set_iperf_server("192.168.1.10")),
+        ]
+
+        iperf_port_menu = [
+            MenuItem("5001", action=lambda: self.set_iperf_port(5001)),
+            MenuItem("5201", action=lambda: self.set_iperf_port(5201)),
+        ]
+
+        iperf_direction_menu = [
+            MenuItem("Normal", action=lambda: self.set_iperf_tradeoff(False)),
+            MenuItem("Tradeoff", action=lambda: self.set_iperf_tradeoff(True)),
+        ]
+
+        iperf_duration_menu = [
+            MenuItem("5", action=lambda: self.set_iperf_duration(5)),
+            MenuItem("10", action=lambda: self.set_iperf_duration(10)),
+            MenuItem("30", action=lambda: self.set_iperf_duration(30)),
+        ]
+
+        iperf_settings_menu = [
+            MenuItem("Server", submenu=iperf_server_menu),
+            MenuItem("Port", submenu=iperf_port_menu),
+            MenuItem("Direction", submenu=iperf_direction_menu),
+            MenuItem("Duration", submenu=iperf_duration_menu),
+        ]
+
         iperf3_server_menu = [
             MenuItem("Gateway", action=lambda: self.set_iperf3_server("gateway")),
             MenuItem("192.168.1.1", action=lambda: self.set_iperf3_server("192.168.1.1")),
@@ -221,6 +267,7 @@ class MenuApp:
             MenuItem("Speedtest", submenu=speedtest_settings_menu),
             MenuItem("Ping", submenu=ping_settings_menu),
             MenuItem("Traceroute", submenu=traceroute_settings_menu),
+            MenuItem("Iperf", submenu=iperf_settings_menu),
             MenuItem("Iperf3", submenu=iperf3_settings_menu),
             MenuItem("Power", submenu=power_menu),
         ]
@@ -247,13 +294,16 @@ class MenuApp:
 
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), (0, 0, 0))
         draw = ImageDraw.Draw(img)
+
         draw.rectangle((0, 0, self.lcd.width, 20), fill=(0, 0, 80))
         draw.rectangle((0, self.lcd.height - 16, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
+
         draw.text((18, 18), "Raspberry Pi", font=self.font, fill=(255, 255, 255))
         draw.text((34, 36), "Network", font=self.font, fill=(0, 255, 0))
         draw.text((42, 50), "Toolkit", font=self.font, fill=(0, 255, 255))
         draw.text((20, 80), "Starting...", font=self.font, fill=(255, 255, 0))
         draw.text((8, self.lcd.height - 12), "Please wait", font=self.font, fill=(128, 128, 128))
+
         self.lcd.LCD_ShowImage(img)
         time.sleep(duration)
 
@@ -262,6 +312,7 @@ class MenuApp:
     # ------------------------------------------------------------------
     def run(self):
         self.draw_menu()
+
         while True:
             key = self.read_key()
             if key is None:
@@ -292,6 +343,7 @@ class MenuApp:
     def enter_item(self):
         if not self.current_menu:
             return
+
         item = self.current_menu[self.current_index]
 
         if item.submenu:
@@ -314,6 +366,9 @@ class MenuApp:
         self.current_menu = self.root_menu
         self.current_index = 0
         self.current_title = "Main Menu"
+
+    def get_menu_path_titles(self) -> List[str]:
+        return [title for _, _, title in self.menu_stack] + [self.current_title]
 
     def check_home_button(self) -> bool:
         if self.lcd.get_key_state("key3"):
@@ -423,6 +478,8 @@ class MenuApp:
             time.sleep(0.05)
 
     def draw_menu(self):
+        path = self.get_menu_path_titles()
+
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
         draw = ImageDraw.Draw(img)
 
@@ -451,10 +508,6 @@ class MenuApp:
                 if self.scan_profile_label_to_key(title) == self.nmap_profile:
                     title = "* " + title
 
-            if self.current_title == "Port" and title in ("22", "53", "80", "443"):
-                if int(title) == self.netcat_port:
-                    title = "* " + title
-
             if self.current_title == "Secure" and title in ("On", "Off"):
                 if (title == "On") == self.speedtest_secure:
                     title = "* " + title
@@ -476,19 +529,34 @@ class MenuApp:
                     title = "* " + title
 
             if self.current_title == "Server" and title in ("Gateway", "192.168.1.1", "192.168.1.10"):
-                if self.get_iperf3_server_label() == title:
+                if "Iperf3" in path and self.get_iperf3_server_label() == title:
+                    title = "* " + title
+                elif "Iperf" in path and self.get_iperf_server_label() == title:
                     title = "* " + title
 
-            if self.current_title == "Port" and title in ("5201", "5202"):
-                if int(title) == self.iperf3_port:
-                    title = "* " + title
+            if self.current_title == "Port":
+                if "Netcat" in path and title in ("22", "53", "80", "443"):
+                    if int(title) == self.netcat_port:
+                        title = "* " + title
+                elif "Iperf3" in path and title in ("5201", "5202"):
+                    if int(title) == self.iperf3_port:
+                        title = "* " + title
+                elif "Iperf" in path and title in ("5001", "5201"):
+                    if int(title) == self.iperf_port:
+                        title = "* " + title
 
-            if self.current_title == "Direction" and title in ("Normal", "Reverse"):
-                if self.get_iperf3_direction_label() == title:
-                    title = "* " + title
+            if self.current_title == "Direction":
+                if "Iperf3" in path and title in ("Normal", "Reverse"):
+                    if self.get_iperf3_direction_label() == title:
+                        title = "* " + title
+                elif "Iperf" in path and title in ("Normal", "Tradeoff"):
+                    if self.get_iperf_direction_label() == title:
+                        title = "* " + title
 
             if self.current_title == "Duration" and title in ("5", "10", "30"):
-                if int(title) == self.iperf3_duration:
+                if "Iperf3" in path and int(title) == self.iperf3_duration:
+                    title = "* " + title
+                elif "Iperf" in path and int(title) == self.iperf_duration:
                     title = "* " + title
 
             draw.text((2, y), self.fit_text(prefix + " " + title, 20), font=self.font, fill=color)
@@ -509,6 +577,8 @@ class MenuApp:
             footer = self.fit_text(f"{self.get_ping_target_label()} x{self.ping_count}", 20)
         elif self.current_title == "Traceroute":
             footer = self.fit_text(f"{self.get_traceroute_target_label()} h{self.traceroute_max_hops}", 20)
+        elif self.current_title == "Iperf":
+            footer = self.fit_text(f"{self.get_iperf_server_label()} {self.get_iperf_direction_label()}", 20)
         elif self.current_title == "Iperf3":
             footer = self.fit_text(f"{self.get_iperf3_server_label()} {self.get_iperf3_direction_label()}", 20)
         elif self.current_title == "Scan Type":
@@ -523,21 +593,32 @@ class MenuApp:
             footer = "Now: " + self.get_traceroute_target_label()
         elif self.current_title == "Max Hops":
             footer = "Now: " + str(self.traceroute_max_hops)
+        elif self.current_title == "Server":
+            if "Iperf3" in path:
+                footer = "Now: " + self.get_iperf3_server_label()
+            elif "Iperf" in path:
+                footer = "Now: " + self.get_iperf_server_label()
+        elif self.current_title == "Port":
+            if "Netcat" in path:
+                footer = "Now: " + self.get_netcat_port_label()
+            elif "Iperf3" in path:
+                footer = "Now: " + str(self.iperf3_port)
+            elif "Iperf" in path:
+                footer = "Now: " + str(self.iperf_port)
         elif self.current_title == "Direction":
-            footer = "Now: " + self.get_iperf3_direction_label()
+            if "Iperf3" in path:
+                footer = "Now: " + self.get_iperf3_direction_label()
+            elif "Iperf" in path:
+                footer = "Now: " + self.get_iperf_direction_label()
         elif self.current_title == "Duration":
-            footer = "Now: " + str(self.iperf3_duration)
+            if "Iperf3" in path:
+                footer = "Now: " + str(self.iperf3_duration)
+            elif "Iperf" in path:
+                footer = "Now: " + str(self.iperf_duration)
         elif self.current_title == "Settings":
             footer = "K1 Back K3 Home"
         elif self.current_title == "Power":
             footer = "Reboot/Shutdown"
-        elif self.current_title == "Server":
-            footer = "Now: " + self.get_iperf3_server_label()
-        elif self.current_title == "Port":
-            if any(item.title in ("5201", "5202") for item in self.current_menu):
-                footer = "Now: " + str(self.iperf3_port)
-            else:
-                footer = "Now: " + self.get_netcat_port_label()
 
         if footer:
             draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
@@ -604,7 +685,11 @@ class MenuApp:
             if self.check_home_button():
                 return False
 
-            if self.lcd.get_key_state("right") or self.lcd.get_key_state("press") or self.lcd.get_key_state("key2"):
+            if (
+                self.lcd.get_key_state("right")
+                or self.lcd.get_key_state("press")
+                or self.lcd.get_key_state("key2")
+            ):
                 time.sleep(0.08)
                 return True
 
@@ -619,6 +704,7 @@ class MenuApp:
     # ------------------------------------------------------------------
     def run_power_command(self, action: str):
         systemctl_path = shutil.which("systemctl") or "/bin/systemctl"
+
         try:
             os.sync()
         except Exception:
@@ -675,6 +761,7 @@ class MenuApp:
 
             img = Image.new("RGB", (self.lcd.width, self.lcd.height), (0, 0, 0))
             draw = ImageDraw.Draw(img)
+
             draw.text((2, 2), "System Stats", font=self.font, fill=(0, 255, 255))
 
             y = 16
@@ -746,12 +833,14 @@ class MenuApp:
             addrs = psutil.net_if_addrs()
             if "eth0" not in addrs:
                 return None, None
+
             for addr in addrs["eth0"]:
                 if addr.family == socket.AF_INET and addr.address and addr.netmask:
                     iface = ipaddress.IPv4Interface(f"{addr.address}/{addr.netmask}")
                     return str(iface.ip), str(iface.network)
         except Exception:
             pass
+
         return None, None
 
     def get_default_gateway(self, interface: str = "eth0") -> Optional[str]:
@@ -763,6 +852,7 @@ class MenuApp:
                 text=True,
                 check=False,
             )
+
             for line in proc.stdout.splitlines():
                 parts = line.split()
                 if "via" in parts:
@@ -771,6 +861,7 @@ class MenuApp:
                         return parts[idx + 1]
         except Exception:
             pass
+
         return None
 
     def resolve_target(self, target_name: str) -> Tuple[Optional[str], str]:
@@ -851,6 +942,31 @@ class MenuApp:
         self.show_message("Max Hops", ["Set to:", str(hops)], wait_for_back=False, delay=1.0)
 
     # ------------------------------------------------------------------
+    # Iperf settings
+    # ------------------------------------------------------------------
+    def set_iperf_server(self, server: str):
+        self.iperf_server = server
+        self.show_message("Iperf Server", ["Set to:", self.get_iperf_server_label()], wait_for_back=False, delay=1.0)
+
+    def get_iperf_server_label(self) -> str:
+        return "Gateway" if self.iperf_server == "gateway" else self.iperf_server
+
+    def set_iperf_port(self, port: int):
+        self.iperf_port = port
+        self.show_message("Iperf Port", ["Set to:", str(port)], wait_for_back=False, delay=1.0)
+
+    def set_iperf_tradeoff(self, tradeoff: bool):
+        self.iperf_tradeoff = tradeoff
+        self.show_message("Iperf Dir", ["Set to:", self.get_iperf_direction_label()], wait_for_back=False, delay=1.0)
+
+    def get_iperf_direction_label(self) -> str:
+        return "Tradeoff" if self.iperf_tradeoff else "Normal"
+
+    def set_iperf_duration(self, duration: int):
+        self.iperf_duration = duration
+        self.show_message("Iperf Time", ["Set to:", str(duration)], wait_for_back=False, delay=1.0)
+
+    # ------------------------------------------------------------------
     # Iperf3 settings
     # ------------------------------------------------------------------
     def set_iperf3_server(self, server: str):
@@ -879,13 +995,22 @@ class MenuApp:
     # Nmap helpers / actions
     # ------------------------------------------------------------------
     def build_nmap_command(self, subnet: str, own_ip: str) -> List[str]:
-        base = ["nmap", "-n", "--exclude", own_ip, "-oX", self.nmap_xml_output_file]
+        base = [
+            "nmap",
+            "-n",
+            "--exclude", own_ip,
+            "-oX", self.nmap_xml_output_file,
+        ]
+
         if self.nmap_profile == "ping":
             return base + ["-sn", subnet]
+
         if self.nmap_profile == "basic":
             return base + ["-sV", "--top-ports", "100", "-T4", subnet]
+
         if self.nmap_profile == "vuln":
             return base + ["-sV", "--script", "vuln", "-T4", subnet]
+
         return base + ["-sn", subnet]
 
     def summarize_nmap_output(self, text: str) -> List[str]:
@@ -896,11 +1021,17 @@ class MenuApp:
                 if host not in hosts:
                     hosts.append(host)
 
-        lines = ["Type: " + self.get_nmap_profile_label(), f"Hosts: {len(hosts)}"]
+        lines = [
+            "Type: " + self.get_nmap_profile_label(),
+            f"Hosts: {len(hosts)}",
+        ]
+
         for host in hosts[:6]:
             lines.append(host)
+
         if len(hosts) > 6:
             lines.append("...")
+
         return lines
 
     def run_nmap_scan(self):
@@ -918,19 +1049,23 @@ class MenuApp:
         try:
             with open(self.nmap_text_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
+
                     draw.text((2, 2), "Nmap Running", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 20), self.fit_text(self.get_nmap_profile_label(), 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 32), self.fit_text(f"Net: {subnet}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 44), self.fit_text(f"Excl:{own_ip}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 60), f"Scan {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -955,6 +1090,7 @@ class MenuApp:
 
             with open(self.nmap_text_output_file, "r") as f:
                 result_text = f.read()
+
             self.show_message("Nmap Done", self.summarize_nmap_output(result_text))
 
         except Exception as e:
@@ -968,10 +1104,13 @@ class MenuApp:
         try:
             with open(self.nmap_text_output_file, "r") as f:
                 text = f.read()
+
             lines = self.summarize_nmap_output(text)
             if len(lines) <= 2:
                 lines.append("No hosts found")
+
             self.show_message("Last Result", lines)
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -986,12 +1125,24 @@ class MenuApp:
         try:
             if xml_exists and shutil.which("xsltproc") is not None:
                 subprocess.run(
-                    ["xsltproc", "-o", self.nmap_html_output_file, self.nmap_xml_output_file],
+                    [
+                        "xsltproc",
+                        "-o", self.nmap_html_output_file,
+                        self.nmap_xml_output_file,
+                    ],
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: xsltproc"])
+
+                self.show_message(
+                    "HTML Saved",
+                    [
+                        "Created:",
+                        os.path.basename(self.nmap_html_output_file),
+                        "Method: xsltproc",
+                    ],
+                )
                 return
 
             if txt_exists:
@@ -1029,7 +1180,14 @@ h1 {{
                 with open(self.nmap_html_output_file, "w", encoding="utf-8") as f:
                     f.write(html_doc)
 
-                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: simple"])
+                self.show_message(
+                    "HTML Saved",
+                    [
+                        "Created:",
+                        os.path.basename(self.nmap_html_output_file),
+                        "Method: simple",
+                    ],
+                )
                 return
 
             self.show_message("Convert HTML", ["Nothing to convert"])
@@ -1042,6 +1200,7 @@ h1 {{
     # ------------------------------------------------------------------
     def tcp_connect_check(self, host: str, port: int, timeout: float = 2.0) -> Tuple[bool, str]:
         nc_path = shutil.which("nc")
+
         if nc_path:
             try:
                 proc = subprocess.run(
@@ -1052,7 +1211,9 @@ h1 {{
                     check=False,
                 )
                 output = (proc.stdout + "\n" + proc.stderr).strip()
-                return proc.returncode == 0, output or ("Connected" if proc.returncode == 0 else "Connection failed")
+                return proc.returncode == 0, output or (
+                    "Connected" if proc.returncode == 0 else "Connection failed"
+                )
             except Exception as e:
                 return False, str(e)
 
@@ -1080,7 +1241,12 @@ h1 {{
 
         ok, output = self.tcp_connect_check(gateway, port)
 
-        lines = [f"Host: {gateway}", f"Port: {port}", "OPEN" if ok else "CLOSED"]
+        lines = [
+            f"Host: {gateway}",
+            f"Port: {port}",
+            "OPEN" if ok else "CLOSED",
+        ]
+
         extra = [line.strip() for line in output.splitlines() if line.strip()]
         lines.extend(extra[:4])
 
@@ -1101,9 +1267,12 @@ h1 {{
         try:
             with open(self.netcat_output_file, "r", encoding="utf-8", errors="replace") as f:
                 lines = [line.strip() for line in f.readlines() if line.strip()]
+
             if not lines:
                 lines = ["No output"]
+
             self.show_message("Netcat Last", lines[:8])
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1124,18 +1293,22 @@ h1 {{
         try:
             with open(self.speedtest_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
+
                     draw.text((2, 2), "Speedtest", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 24), "Running...", font=self.font, fill=(255, 255, 255))
                     draw.text((2, 40), f"Secure: {self.get_speedtest_secure_label()}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Test {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1171,15 +1344,18 @@ h1 {{
         try:
             with open(self.speedtest_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
+
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             if not lines:
                 lines = ["No output"]
+
             self.show_message(title, lines[:8])
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
     # ------------------------------------------------------------------
-    # Ping helpers / actions
+    # Ping actions
     # ------------------------------------------------------------------
     def run_ping(self):
         target, label = self.resolve_target(self.ping_target)
@@ -1197,19 +1373,22 @@ h1 {{
         try:
             with open(self.ping_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
+
                     draw.text((2, 2), "Ping", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 22), self.fit_text(f"Tgt: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 46), f"Cnt: {self.ping_count}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 62), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1245,15 +1424,18 @@ h1 {{
         try:
             with open(self.ping_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
+
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
+
             self.show_scrollable_lines(title, raw_lines)
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
     # ------------------------------------------------------------------
-    # Traceroute helpers / actions
+    # Traceroute actions
     # ------------------------------------------------------------------
     def run_traceroute(self):
         traceroute_path = shutil.which("traceroute")
@@ -1271,19 +1453,23 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
+
                     draw.text((2, 2), "Traceroute", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 22), self.fit_text(f"Tgt: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 46), f"Hop: {self.traceroute_max_hops}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 62), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1319,15 +1505,107 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
+
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
+
             self.show_scrollable_lines(title, raw_lines)
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
     # ------------------------------------------------------------------
-    # Iperf3 helpers / actions
+    # Iperf actions
+    # ------------------------------------------------------------------
+    def run_iperf(self):
+        iperf_path = shutil.which("iperf")
+        if iperf_path is None:
+            self.show_message("Iperf", ["Install:", "sudo apt install", "iperf"])
+            return
+
+        server, label = self.resolve_target(self.iperf_server)
+        if not server:
+            self.show_message("Iperf", ["Server not ready"])
+            return
+
+        cmd = [
+            iperf_path,
+            "-c", server,
+            "-p", str(self.iperf_port),
+            "-t", str(self.iperf_duration),
+        ]
+        if self.iperf_tradeoff:
+            cmd.append("-r")
+
+        try:
+            with open(self.iperf_output_file, "w") as out:
+                proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
+                spinner = ["|", "/", "-", "\\"]
+                i = 0
+
+                while proc.poll() is None:
+                    img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
+                    draw = ImageDraw.Draw(img)
+
+                    draw.text((2, 2), "Iperf", font=self.font, fill=(0, 255, 255))
+                    draw.text((2, 20), self.fit_text(f"Srv: {label}", 20), font=self.font, fill=(255, 255, 255))
+                    draw.text((2, 32), f"Prt: {self.iperf_port}", font=self.font, fill=(255, 255, 0))
+                    draw.text((2, 44), self.fit_text(f"Dir: {self.get_iperf_direction_label()}", 20), font=self.font, fill=(255, 255, 0))
+                    draw.text((2, 56), f"Sec: {self.iperf_duration}", font=self.font, fill=(255, 255, 0))
+                    draw.text((2, 70), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
+                    draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
+                    draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
+                    self.lcd.LCD_ShowImage(img)
+                    i += 1
+
+                    if self.check_home_button():
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=2)
+                        except Exception:
+                            proc.kill()
+                        return
+
+                    if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=2)
+                        except Exception:
+                            proc.kill()
+                        self.show_message("Iperf", ["Run cancelled"])
+                        return
+
+                    time.sleep(0.2)
+
+            self.show_last_iperf_result(title="Iperf Done")
+
+        except Exception as e:
+            self.show_message("Iperf Err", [str(e)])
+
+    def show_last_iperf_result(self, title: str = "Iperf Result"):
+        if not os.path.exists(self.iperf_output_file):
+            self.show_message("Iperf", ["No saved result"])
+            return
+
+        try:
+            with open(self.iperf_output_file, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+
+            raw_lines = [line.rstrip() for line in text.splitlines()]
+            if not raw_lines:
+                raw_lines = ["No output"]
+
+            self.show_scrollable_lines(title, raw_lines)
+
+        except Exception as e:
+            self.show_message("Read Error", [str(e)])
+
+    # ------------------------------------------------------------------
+    # Iperf3 actions
     # ------------------------------------------------------------------
     def run_iperf3(self):
         iperf_path = shutil.which("iperf3")
@@ -1352,20 +1630,24 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
+
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
+
                     draw.text((2, 2), "Iperf3", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 20), self.fit_text(f"Srv: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 32), f"Prt: {self.iperf3_port}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 44), self.fit_text(f"Dir: {self.get_iperf3_direction_label()}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Sec: {self.iperf3_duration}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 70), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
+
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
+
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1401,10 +1683,13 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
+
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
+
             self.show_scrollable_lines(title, raw_lines)
+
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
