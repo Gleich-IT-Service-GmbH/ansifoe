@@ -194,6 +194,258 @@ View logs:
 ```bash
 journalctl -u lcd-menu.service -f
 ```
+
+# Menu Structure
+
+## Navigation Notes
+
+- **Joystick Up / Down**: move selection
+- **Joystick Right**: enter submenu / run action
+- **Joystick Left**: go back one level
+- **Joystick Press**: enter / confirm
+- **Key1**: back
+- **Key2**: OK / run / confirm
+- **Key3**: jump directly to the **Main Menu**
+
+## Scrolling
+
+- Long menus automatically **scroll** when the selected item moves out of view
+- Long tool outputs use a **scrollable text viewer**
+  - **Up / Down**: scroll text
+  - **Left / Key1**: back
+  - **Key3**: home
+
+---
+
+# Main Menu
+
+- System Stats
+- Tools
+- Settings
+
+---
+
+# System Stats
+
+- Live Stats
+
+---
+
+# Tools
+
+- Nmap
+- Netcat
+- Speedtest
+- Ping
+- Traceroute
+- Iperf
+- Iperf3
+
+---
+
+# Tools → Nmap
+
+- Run Scan
+- Last Result
+- Convert to HTML
+
+---
+
+# Tools → Netcat
+
+- Run Check
+- Last Result
+
+---
+
+# Tools → Speedtest
+
+- Run Test
+- Last Result
+
+---
+
+# Tools → Ping
+
+- Run
+- Last Result
+
+---
+
+# Tools → Traceroute
+
+- Run
+- Last Result
+
+---
+
+# Tools → Iperf
+
+- Run
+- Last Result
+
+---
+
+# Tools → Iperf3
+
+- Run
+- Last Result
+
+---
+
+# Settings
+
+- Nmap
+- Netcat
+- Speedtest
+- Ping
+- Traceroute
+- Iperf
+- Iperf3
+- Power
+
+---
+
+# Settings → Nmap
+
+- Scan Type
+
+## Settings → Nmap → Scan Type
+
+- Ping Sweep
+- Basic Service
+- Vuln Scripts
+
+---
+
+# Settings → Netcat
+
+- Port
+
+## Settings → Netcat → Port
+
+- 22
+- 53
+- 80
+- 443
+
+---
+
+# Settings → Speedtest
+
+- Secure
+
+## Settings → Speedtest → Secure
+
+- On
+- Off
+
+---
+
+# Settings → Ping
+
+- Ping Target
+- Ping Count
+
+## Settings → Ping → Ping Target
+
+- Gateway
+- 1.1.1.1
+- 8.8.8.8
+
+## Settings → Ping → Ping Count
+
+- 4
+- 10
+
+---
+
+# Settings → Traceroute
+
+- Trace Target
+- Max Hops
+
+## Settings → Traceroute → Trace Target
+
+- Gateway
+- 1.1.1.1
+- 8.8.8.8
+
+## Settings → Traceroute → Max Hops
+
+- 10
+- 20
+- 30
+
+---
+
+# Settings → Iperf
+
+- Server
+- Port
+- Direction
+- Duration
+
+## Settings → Iperf → Server
+
+- Gateway
+- 192.168.1.1
+- 192.168.1.10
+
+## Settings → Iperf → Port
+
+- 5001
+- 5201
+
+## Settings → Iperf → Direction
+
+- Normal
+- Tradeoff
+
+## Settings → Iperf → Duration
+
+- 5
+- 10
+- 30
+
+---
+
+# Settings → Iperf3
+
+- Server
+- Port
+- Direction
+- Duration
+
+## Settings → Iperf3 → Server
+
+- Gateway
+- 192.168.1.1
+- 192.168.1.10
+
+## Settings → Iperf3 → Port
+
+- 5201
+- 5202
+
+## Settings → Iperf3 → Direction
+
+- Normal
+- Reverse
+
+## Settings → Iperf3 → Duration
+
+- 5
+- 10
+- 30
+
+---
+
+# Settings → Power
+
+- Reboot
+- Shutdown
+
 ## Disclaimer
 Use the included network tools only on systems and networks you own or are authorized to test.
 
