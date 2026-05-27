@@ -3,6 +3,7 @@
 
 import html
 import ipaddress
+import json
 import os
 import shutil
 import socket
@@ -12,7 +13,7 @@ import textwrap
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple, Any
+from typing import Any, Callable, List, Optional, Tuple
 
 import psutil
 from PIL import Image, ImageDraw, ImageFont
@@ -40,10 +41,32 @@ class MenuApp:
         self._external_ip_last_update = 0
 
         # --------------------------------------------------------------
-        # Central choice lists
-        # Loaded from JSON if available, otherwise defaults are used
+        # Load central choice lists from JSON
         # --------------------------------------------------------------
         self.load_choice_config()
+
+        # --------------------------------------------------------------
+        # Current tool settings
+        # --------------------------------------------------------------
+        self.nmap_profile = "ping"
+        self.netcat_port = 80
+        self.speedtest_secure = True
+
+        self.ping_target = "gateway"
+        self.ping_count = 4
+
+        self.traceroute_target = "gateway"
+        self.traceroute_max_hops = 20
+
+        self.iperf_server = "gateway"
+        self.iperf_port = 5001
+        self.iperf_tradeoff = False
+        self.iperf_duration = 10
+
+        self.iperf3_server = "gateway"
+        self.iperf3_port = 5201
+        self.iperf3_reverse = False
+        self.iperf3_duration = 10
 
         # --------------------------------------------------------------
         # Output files
@@ -69,34 +92,9 @@ class MenuApp:
         self.current_title = "Main Menu"
 
     # ------------------------------------------------------------------
-    # Generic menu builders / label helpers
+    # JSON choice config
     # ------------------------------------------------------------------
-    def build_choice_menu(self, choices: List[Tuple[str, Any]], setter: Callable[[Any], None]) -> List[MenuItem]:
-        return [
-            MenuItem(label, action=lambda value=value: setter(value))
-            for label, value in choices
-        ]
-
-    def build_value_menu(self, values: List[Any], setter: Callable[[Any], None]) -> List[MenuItem]:
-        return [
-            MenuItem(str(value), action=lambda value=value: setter(value))
-            for value in values
-        ]
-
-    def get_choice_label(self, choices: List[Tuple[str, Any]], value: Any) -> str:
-        for label, stored in choices:
-            if stored == value:
-                return label
-        return str(value)
-
-    def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
-        return tuple(label for label, _ in choices)
-
     def load_choice_config(self):
-        """
-        Load menu choice lists from menu_choices.json.
-        Falls back to built-in defaults if file is missing or invalid.
-        """
         defaults = {
             "target_choices": [
                 ("Gateway", "gateway"),
@@ -197,9 +195,6 @@ class MenuApp:
         )
 
     def normalize_choice_pairs(self, value, fallback):
-        """
-        Ensure choices are a list of (label, value) tuples.
-        """
         try:
             result = []
             for item in value:
@@ -212,9 +207,6 @@ class MenuApp:
         return fallback
 
     def normalize_simple_list(self, value, fallback, cast_type=int):
-        """
-        Ensure choices are a simple typed list.
-        """
         try:
             result = [cast_type(v) for v in value]
             if result:
@@ -222,6 +214,30 @@ class MenuApp:
         except Exception:
             pass
         return fallback
+
+    # ------------------------------------------------------------------
+    # Generic helpers
+    # ------------------------------------------------------------------
+    def build_choice_menu(self, choices: List[Tuple[str, Any]], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [
+            MenuItem(label, action=lambda value=value: setter(value))
+            for label, value in choices
+        ]
+
+    def build_value_menu(self, values: List[Any], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [
+            MenuItem(str(value), action=lambda value=value: setter(value))
+            for value in values
+        ]
+
+    def get_choice_label(self, choices: List[Tuple[str, Any]], value: Any) -> str:
+        for label, stored in choices:
+            if stored == value:
+                return label
+        return str(value)
+
+    def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
+        return tuple(label for label, _ in choices)
 
     def get_menu_path_titles(self) -> List[str]:
         return [title for _, _, _, title in self.menu_stack] + [self.current_title]
@@ -415,9 +431,7 @@ class MenuApp:
         item = self.current_menu[self.current_index]
 
         if item.submenu:
-            self.menu_stack.append(
-                (self.current_menu, self.current_index, self.current_top, self.current_title)
-            )
+            self.menu_stack.append((self.current_menu, self.current_index, self.current_top, self.current_title))
             self.current_menu = item.submenu
             self.current_index = 0
             self.current_top = 0
@@ -782,7 +796,6 @@ class MenuApp:
     # ------------------------------------------------------------------
     def run_power_command(self, action: str):
         systemctl_path = shutil.which("systemctl") or "/bin/systemctl"
-
         try:
             os.sync()
         except Exception:
@@ -844,7 +857,6 @@ class MenuApp:
 
             y = 16
             line_h = 11
-
             draw.text((2, y), self.fit_text(f"CPU : {cpu_percent:4.1f}%", 20), font=self.font, fill=(255, 255, 255))
             y += line_h
 
@@ -868,382 +880,9 @@ class MenuApp:
             self.lcd.LCD_ShowImage(img)
             time.sleep(0.25)
 
-    @staticmethod
-    def get_cpu_temp() -> Optional[float]:
-        try:
-            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
-                return int(f.read().strip()) / 1000.0
-        except Exception:
-            return None
-
-    @staticmethod
-    def get_interface_ipv4(interface_name: str) -> Optional[str]:
-        try:
-            addrs = psutil.net_if_addrs()
-            if interface_name not in addrs:
-                return None
-            for addr in addrs[interface_name]:
-                if addr.family == socket.AF_INET:
-                    return addr.address
-        except Exception:
-            pass
-        return None
-
-    def get_external_ip(self, max_age: int = 60) -> str:
-        now = time.time()
-        if now - self._external_ip_last_update < max_age:
-            return self._external_ip_cache
-
-        try:
-            with urllib.request.urlopen("https://api.ipify.org", timeout=2) as response:
-                self._external_ip_cache = response.read().decode("utf-8").strip()
-        except Exception:
-            pass
-
-        self._external_ip_last_update = now
-        return self._external_ip_cache
-
     # ------------------------------------------------------------------
-    # Common network helpers
+    # Tool actions
     # ------------------------------------------------------------------
-    def get_eth0_network(self) -> Tuple[Optional[str], Optional[str]]:
-        try:
-            addrs = psutil.net_if_addrs()
-            if "eth0" not in addrs:
-                return None, None
-
-            for addr in addrs["eth0"]:
-                if addr.family == socket.AF_INET and addr.address and addr.netmask:
-                    iface = ipaddress.IPv4Interface(f"{addr.address}/{addr.netmask}")
-                    return str(iface.ip), str(iface.network)
-        except Exception:
-            pass
-
-        return None, None
-
-    def get_default_gateway(self, interface: str = "eth0") -> Optional[str]:
-        try:
-            proc = subprocess.run(
-                ["ip", "route", "show", "default", "dev", interface],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-            for line in proc.stdout.splitlines():
-                parts = line.split()
-                if "via" in parts:
-                    idx = parts.index("via")
-                    if idx + 1 < len(parts):
-                        return parts[idx + 1]
-        except Exception:
-            pass
-        return None
-
-    def resolve_target(self, target_name: str) -> Tuple[Optional[str], str]:
-        if target_name == "gateway":
-            gw = self.get_default_gateway("eth0")
-            return gw, "Gateway"
-        return target_name, target_name
-
-    # ------------------------------------------------------------------
-    # Nmap settings / labels
-    # ------------------------------------------------------------------
-    def set_nmap_profile(self, profile: str):
-        self.nmap_profile = profile
-        self.show_message("Nmap Type", ["Set to:", self.get_nmap_profile_label()], wait_for_back=False, delay=1.0)
-
-    def get_nmap_profile_label(self) -> str:
-        return self.get_choice_label(self.nmap_profile_choices, self.nmap_profile)
-
-    # ------------------------------------------------------------------
-    # Netcat settings / labels
-    # ------------------------------------------------------------------
-    def set_netcat_port(self, port: int):
-        self.netcat_port = port
-        self.show_message("Netcat Port", ["Set to:", str(port)], wait_for_back=False, delay=1.0)
-
-    def get_netcat_port_label(self) -> str:
-        return str(self.netcat_port)
-
-    # ------------------------------------------------------------------
-    # Speedtest settings / labels
-    # ------------------------------------------------------------------
-    def set_speedtest_secure(self, enabled: bool):
-        self.speedtest_secure = enabled
-        self.show_message("Speedtest", ["Secure:", self.get_speedtest_secure_label()], wait_for_back=False, delay=1.0)
-
-    def get_speedtest_secure_label(self) -> str:
-        return self.get_choice_label(self.speedtest_secure_choices, self.speedtest_secure)
-
-    # ------------------------------------------------------------------
-    # Ping settings / labels
-    # ------------------------------------------------------------------
-    def set_ping_target(self, target: str):
-        self.ping_target = target
-        self.show_message("Ping Target", ["Set to:", self.get_ping_target_label()], wait_for_back=False, delay=1.0)
-
-    def get_ping_target_label(self) -> str:
-        return self.get_choice_label(self.target_choices, self.ping_target)
-
-    def set_ping_count(self, count: int):
-        self.ping_count = count
-        self.show_message("Ping Count", ["Set to:", str(count)], wait_for_back=False, delay=1.0)
-
-    # ------------------------------------------------------------------
-    # Traceroute settings / labels
-    # ------------------------------------------------------------------
-    def set_traceroute_target(self, target: str):
-        self.traceroute_target = target
-        self.show_message("Trace Target", ["Set to:", self.get_traceroute_target_label()], wait_for_back=False, delay=1.0)
-
-    def get_traceroute_target_label(self) -> str:
-        return self.get_choice_label(self.target_choices, self.traceroute_target)
-
-    def set_traceroute_max_hops(self, hops: int):
-        self.traceroute_max_hops = hops
-        self.show_message("Max Hops", ["Set to:", str(hops)], wait_for_back=False, delay=1.0)
-
-    # ------------------------------------------------------------------
-    # Iperf settings / labels
-    # ------------------------------------------------------------------
-    def set_iperf_server(self, server: str):
-        self.iperf_server = server
-        self.show_message("Iperf Server", ["Set to:", self.get_iperf_server_label()], wait_for_back=False, delay=1.0)
-
-    def get_iperf_server_label(self) -> str:
-        return self.get_choice_label(self.target_choices, self.iperf_server)
-
-    def set_iperf_port(self, port: int):
-        self.iperf_port = port
-        self.show_message("Iperf Port", ["Set to:", str(port)], wait_for_back=False, delay=1.0)
-
-    def set_iperf_tradeoff(self, tradeoff: bool):
-        self.iperf_tradeoff = tradeoff
-        self.show_message("Iperf Dir", ["Set to:", self.get_iperf_direction_label()], wait_for_back=False, delay=1.0)
-
-    def get_iperf_direction_label(self) -> str:
-        return self.get_choice_label(self.iperf_direction_choices, self.iperf_tradeoff)
-
-    def set_iperf_duration(self, duration: int):
-        self.iperf_duration = duration
-        self.show_message("Iperf Time", ["Set to:", str(duration)], wait_for_back=False, delay=1.0)
-
-    # ------------------------------------------------------------------
-    # Iperf3 settings / labels
-    # ------------------------------------------------------------------
-    def set_iperf3_server(self, server: str):
-        self.iperf3_server = server
-        self.show_message("Iperf3 Server", ["Set to:", self.get_iperf3_server_label()], wait_for_back=False, delay=1.0)
-
-    def get_iperf3_server_label(self) -> str:
-        return self.get_choice_label(self.target_choices, self.iperf3_server)
-
-    def set_iperf3_port(self, port: int):
-        self.iperf3_port = port
-        self.show_message("Iperf3 Port", ["Set to:", str(port)], wait_for_back=False, delay=1.0)
-
-    def set_iperf3_reverse(self, reverse: bool):
-        self.iperf3_reverse = reverse
-        self.show_message("Iperf3 Dir", ["Set to:", self.get_iperf3_direction_label()], wait_for_back=False, delay=1.0)
-
-    def get_iperf3_direction_label(self) -> str:
-        return self.get_choice_label(self.iperf3_direction_choices, self.iperf3_reverse)
-
-    def set_iperf3_duration(self, duration: int):
-        self.iperf3_duration = duration
-        self.show_message("Iperf3 Time", ["Set to:", str(duration)], wait_for_back=False, delay=1.0)
-
-    # ------------------------------------------------------------------
-    # Nmap actions
-    # ------------------------------------------------------------------
-    def build_nmap_command(self, subnet: str, own_ip: str) -> List[str]:
-        base = ["nmap", "-n", "--exclude", own_ip, "-oX", self.nmap_xml_output_file]
-        if self.nmap_profile == "ping":
-            return base + ["-sn", subnet]
-        if self.nmap_profile == "basic":
-            return base + ["-sV", "--top-ports", "100", "-T4", subnet]
-        if self.nmap_profile == "vuln":
-            return base + ["-sV", "--script", "vuln", "-T4", subnet]
-        return base + ["-sn", subnet]
-
-    def summarize_nmap_output(self, text: str) -> List[str]:
-        hosts = []
-        for line in text.splitlines():
-            if line.startswith("Nmap scan report for "):
-                host = line.replace("Nmap scan report for ", "").strip()
-                if host not in hosts:
-                    hosts.append(host)
-
-        lines = ["Type: " + self.get_nmap_profile_label(), f"Hosts: {len(hosts)}"]
-        for host in hosts[:6]:
-            lines.append(host)
-        if len(hosts) > 6:
-            lines.append("...")
-        return lines
-
-    def run_nmap_scan(self):
-        if shutil.which("nmap") is None:
-            self.show_message("Nmap", ["nmap not found", "sudo apt install", "nmap"])
-            return
-
-        own_ip, subnet = self.get_eth0_network()
-        if not own_ip or not subnet:
-            self.show_message("Nmap", ["eth0 not ready", "No IPv4/netmask"])
-            return
-
-        cmd = self.build_nmap_command(subnet, own_ip)
-
-        try:
-            with open(self.nmap_text_output_file, "w") as out:
-                proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-                spinner = ["|", "/", "-", "\\"]
-                i = 0
-
-                while proc.poll() is None:
-                    img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
-                    draw = ImageDraw.Draw(img)
-
-                    draw.text((2, 2), "Nmap Running", font=self.font, fill=(0, 255, 255))
-                    draw.text((2, 20), self.fit_text(self.get_nmap_profile_label(), 20), font=self.font, fill=(255, 255, 255))
-                    draw.text((2, 32), self.fit_text(f"Net: {subnet}", 20), font=self.font, fill=(255, 255, 0))
-                    draw.text((2, 44), self.fit_text(f"Excl:{own_ip}", 20), font=self.font, fill=(255, 255, 0))
-                    draw.text((2, 60), f"Scan {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-                    draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
-                    draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-                    self.lcd.LCD_ShowImage(img)
-                    i += 1
-
-                    if self.check_home_button():
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=2)
-                        except Exception:
-                            proc.kill()
-                        return
-
-                    if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
-                        proc.terminate()
-                        try:
-                            proc.wait(timeout=2)
-                        except Exception:
-                            proc.kill()
-                        self.show_message("Nmap", ["Scan cancelled"])
-                        return
-
-                    time.sleep(0.2)
-
-            with open(self.nmap_text_output_file, "r") as f:
-                result_text = f.read()
-
-            self.show_message("Nmap Done", self.summarize_nmap_output(result_text))
-
-        except Exception as e:
-            self.show_message("Nmap Error", [str(e)])
-
-    def show_last_nmap_result(self):
-        if not os.path.exists(self.nmap_text_output_file):
-            self.show_message("Nmap Result", ["No saved result"])
-            return
-
-        try:
-            with open(self.nmap_text_output_file, "r") as f:
-                text = f.read()
-            lines = self.summarize_nmap_output(text)
-            if len(lines) <= 2:
-                lines.append("No hosts found")
-            self.show_message("Last Result", lines)
-        except Exception as e:
-            self.show_message("Read Error", [str(e)])
-
-    def convert_nmap_to_html(self):
-        xml_exists = os.path.exists(self.nmap_xml_output_file)
-        txt_exists = os.path.exists(self.nmap_text_output_file)
-
-        if not xml_exists and not txt_exists:
-            self.show_message("Convert HTML", ["No scan result", "Run scan first"])
-            return
-
-        try:
-            if xml_exists and shutil.which("xsltproc") is not None:
-                subprocess.run(
-                    ["xsltproc", "-o", self.nmap_html_output_file, self.nmap_xml_output_file],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: xsltproc"])
-                return
-
-            if txt_exists:
-                with open(self.nmap_text_output_file, "r", encoding="utf-8", errors="replace") as f:
-                    text = f.read()
-
-                html_doc = f"""<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Nmap Report</title>
-<style>
-body {{
-  background: #111;
-  color: #eee;
-  font-family: monospace;
-  padding: 1rem;
-}}
-pre {{
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}}
-h1 {{
-  color: #7CFC00;
-}}
-</style>
-</head>
-<body>
-<h1>Nmap Report</h1>
-<p>Profile: {html.escape(self.get_nmap_profile_label())}</p>
-<pre>{html.escape(text)}</pre>
-</body>
-</html>
-"""
-                with open(self.nmap_html_output_file, "w", encoding="utf-8") as f:
-                    f.write(html_doc)
-
-                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: simple"])
-                return
-
-            self.show_message("Convert HTML", ["Nothing to convert"])
-
-        except Exception as e:
-            self.show_message("HTML Error", [str(e)])
-
-    # ------------------------------------------------------------------
-    # Netcat actions
-    # ------------------------------------------------------------------
-    def tcp_connect_check(self, host: str, port: int, timeout: float = 2.0) -> Tuple[bool, str]:
-        nc_path = shutil.which("nc")
-
-        if nc_path:
-            try:
-                proc = subprocess.run(
-                    [nc_path, "-vz", "-w", str(int(timeout)), host, str(port)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=False,
-                )
-                output = (proc.stdout + "\n" + proc.stderr).strip()
-                return proc.returncode == 0, output or ("Connected" if proc.returncode == 0 else "Connection failed")
-            except Exception as e:
-                return False, str(e)
-
-        try:
-            with socket.create_connection((host, port), timeout=timeout):
-                return True, f"Connected to {host}:{port}"
-        except Exception as e:
-            return False, str(e)
-
     def run_netcat_check(self):
         gateway = self.get_default_gateway("eth0")
         if not gateway:
@@ -1275,23 +914,39 @@ h1 {{
 
         self.show_message("Netcat", lines)
 
+    def tcp_connect_check(self, host: str, port: int, timeout: float = 2.0) -> Tuple[bool, str]:
+        nc_path = shutil.which("nc")
+        if nc_path:
+            try:
+                proc = subprocess.run(
+                    [nc_path, "-vz", "-w", str(int(timeout)), host, str(port)],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                )
+                output = (proc.stdout + "\n" + proc.stderr).strip()
+                return proc.returncode == 0, output or ("Connected" if proc.returncode == 0 else "Connection failed")
+            except Exception as e:
+                return False, str(e)
+
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True, f"Connected to {host}:{port}"
+        except Exception as e:
+            return False, str(e)
+
     def show_last_netcat_result(self):
         if not os.path.exists(self.netcat_output_file):
             self.show_message("Netcat", ["No saved result"])
             return
-
         try:
             with open(self.netcat_output_file, "r", encoding="utf-8", errors="replace") as f:
                 lines = [line.strip() for line in f.readlines() if line.strip()]
-            if not lines:
-                lines = ["No output"]
-            self.show_message("Netcat Last", lines[:8])
+            self.show_message("Netcat Last", lines[:8] if lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
-    # ------------------------------------------------------------------
-    # Speedtest actions
-    # ------------------------------------------------------------------
     def run_speedtest(self):
         try:
             import speedtest  # noqa: F401
@@ -1308,11 +963,9 @@ h1 {{
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Speedtest", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 24), "Running...", font=self.font, fill=(255, 255, 255))
                     draw.text((2, 40), f"Secure: {self.get_speedtest_secure_label()}", font=self.font, fill=(255, 255, 0))
@@ -1329,7 +982,6 @@ h1 {{
                         except Exception:
                             proc.kill()
                         return
-
                     if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                         proc.terminate()
                         try:
@@ -1338,11 +990,9 @@ h1 {{
                             proc.kill()
                         self.show_message("Speedtest", ["Test cancelled"])
                         return
-
                     time.sleep(0.2)
 
             self.show_last_speedtest_result(title="Speedtest Done")
-
         except Exception as e:
             self.show_message("Speedtest Err", [str(e)])
 
@@ -1350,20 +1000,14 @@ h1 {{
         if not os.path.exists(self.speedtest_output_file):
             self.show_message("Speedtest", ["No saved result"])
             return
-
         try:
             with open(self.speedtest_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
             lines = [line.strip() for line in text.splitlines() if line.strip()]
-            if not lines:
-                lines = ["No output"]
-            self.show_message(title, lines[:8])
+            self.show_message(title, lines[:8] if lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
-    # ------------------------------------------------------------------
-    # Ping actions
-    # ------------------------------------------------------------------
     def run_ping(self):
         target, label = self.resolve_target(self.ping_target)
         if not target:
@@ -1382,11 +1026,9 @@ h1 {{
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Ping", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 22), self.fit_text(f"Tgt: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
@@ -1404,7 +1046,6 @@ h1 {{
                         except Exception:
                             proc.kill()
                         return
-
                     if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                         proc.terminate()
                         try:
@@ -1413,11 +1054,9 @@ h1 {{
                             proc.kill()
                         self.show_message("Ping", ["Run cancelled"])
                         return
-
                     time.sleep(0.2)
 
             self.show_last_ping_result(title="Ping Done")
-
         except Exception as e:
             self.show_message("Ping Error", [str(e)])
 
@@ -1425,20 +1064,14 @@ h1 {{
         if not os.path.exists(self.ping_output_file):
             self.show_message("Ping", ["No saved result"])
             return
-
         try:
             with open(self.ping_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
             raw_lines = [line.rstrip() for line in text.splitlines()]
-            if not raw_lines:
-                raw_lines = ["No output"]
-            self.show_scrollable_lines(title, raw_lines)
+            self.show_scrollable_lines(title, raw_lines if raw_lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
-    # ------------------------------------------------------------------
-    # Traceroute actions
-    # ------------------------------------------------------------------
     def run_traceroute(self):
         traceroute_path = shutil.which("traceroute")
         if traceroute_path is None:
@@ -1457,11 +1090,9 @@ h1 {{
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Traceroute", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 22), self.fit_text(f"Tgt: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
@@ -1479,7 +1110,6 @@ h1 {{
                         except Exception:
                             proc.kill()
                         return
-
                     if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                         proc.terminate()
                         try:
@@ -1488,11 +1118,9 @@ h1 {{
                             proc.kill()
                         self.show_message("Traceroute", ["Run cancelled"])
                         return
-
                     time.sleep(0.2)
 
             self.show_last_traceroute_result(title="Trace Done")
-
         except Exception as e:
             self.show_message("Trace Error", [str(e)])
 
@@ -1500,20 +1128,14 @@ h1 {{
         if not os.path.exists(self.traceroute_output_file):
             self.show_message("Traceroute", ["No saved result"])
             return
-
         try:
             with open(self.traceroute_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
             raw_lines = [line.rstrip() for line in text.splitlines()]
-            if not raw_lines:
-                raw_lines = ["No output"]
-            self.show_scrollable_lines(title, raw_lines)
+            self.show_scrollable_lines(title, raw_lines if raw_lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
-    # ------------------------------------------------------------------
-    # Iperf actions
-    # ------------------------------------------------------------------
     def run_iperf(self):
         iperf_path = shutil.which("iperf")
         if iperf_path is None:
@@ -1525,12 +1147,7 @@ h1 {{
             self.show_message("Iperf", ["Server not ready"])
             return
 
-        cmd = [
-            iperf_path,
-            "-c", server,
-            "-p", str(self.iperf_port),
-            "-t", str(self.iperf_duration),
-        ]
+        cmd = [iperf_path, "-c", server, "-p", str(self.iperf_port), "-t", str(self.iperf_duration)]
         if self.iperf_tradeoff:
             cmd.append("-r")
 
@@ -1539,11 +1156,9 @@ h1 {{
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Iperf", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 20), self.fit_text(f"Srv: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 32), f"Prt: {self.iperf_port}", font=self.font, fill=(255, 255, 0))
@@ -1562,7 +1177,6 @@ h1 {{
                         except Exception:
                             proc.kill()
                         return
-
                     if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                         proc.terminate()
                         try:
@@ -1571,11 +1185,9 @@ h1 {{
                             proc.kill()
                         self.show_message("Iperf", ["Run cancelled"])
                         return
-
                     time.sleep(0.2)
 
             self.show_last_iperf_result(title="Iperf Done")
-
         except Exception as e:
             self.show_message("Iperf Err", [str(e)])
 
@@ -1583,20 +1195,14 @@ h1 {{
         if not os.path.exists(self.iperf_output_file):
             self.show_message("Iperf", ["No saved result"])
             return
-
         try:
             with open(self.iperf_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
             raw_lines = [line.rstrip() for line in text.splitlines()]
-            if not raw_lines:
-                raw_lines = ["No output"]
-            self.show_scrollable_lines(title, raw_lines)
+            self.show_scrollable_lines(title, raw_lines if raw_lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
-    # ------------------------------------------------------------------
-    # Iperf3 actions
-    # ------------------------------------------------------------------
     def run_iperf3(self):
         iperf_path = shutil.which("iperf3")
         if iperf_path is None:
@@ -1608,12 +1214,7 @@ h1 {{
             self.show_message("Iperf3", ["Server not ready"])
             return
 
-        cmd = [
-            iperf_path,
-            "-c", server,
-            "-p", str(self.iperf3_port),
-            "-t", str(self.iperf3_duration),
-        ]
+        cmd = [iperf_path, "-c", server, "-p", str(self.iperf3_port), "-t", str(self.iperf3_duration)]
         if self.iperf3_reverse:
             cmd.append("-R")
 
@@ -1622,11 +1223,9 @@ h1 {{
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
-
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Iperf3", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 20), self.fit_text(f"Srv: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 32), f"Prt: {self.iperf3_port}", font=self.font, fill=(255, 255, 0))
@@ -1645,7 +1244,6 @@ h1 {{
                         except Exception:
                             proc.kill()
                         return
-
                     if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                         proc.terminate()
                         try:
@@ -1654,11 +1252,9 @@ h1 {{
                             proc.kill()
                         self.show_message("Iperf3", ["Run cancelled"])
                         return
-
                     time.sleep(0.2)
 
             self.show_last_iperf3_result(title="Iperf3 Done")
-
         except Exception as e:
             self.show_message("Iperf3 Err", [str(e)])
 
@@ -1666,14 +1262,11 @@ h1 {{
         if not os.path.exists(self.iperf3_output_file):
             self.show_message("Iperf3", ["No saved result"])
             return
-
         try:
             with open(self.iperf3_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
             raw_lines = [line.rstrip() for line in text.splitlines()]
-            if not raw_lines:
-                raw_lines = ["No output"]
-            self.show_scrollable_lines(title, raw_lines)
+            self.show_scrollable_lines(title, raw_lines if raw_lines else ["No output"])
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
