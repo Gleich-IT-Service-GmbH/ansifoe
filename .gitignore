@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+ansifoe.code-workspace
+
 # Virtual environment
 venv/
 .env/
