@@ -12,7 +12,7 @@ import textwrap
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Any
 
 import psutil
 from PIL import Image, ImageDraw, ImageFont
@@ -40,12 +40,57 @@ class MenuApp:
         self._external_ip_last_update = 0
 
         # --------------------------------------------------------------
-        # Tool settings
+        # Central choice lists
+        # Edit these to add/remove choices later
+        # --------------------------------------------------------------
+        self.target_choices: List[Tuple[str, str]] = [
+            ("Gateway", "gateway"),
+            ("192.168.178.1", "192.168.178.1"),
+            ("172.16.0.1", "172.16.0.1"),
+            ("192.168.0.1", "192.168.0.1"),
+            ("192.168.2.1", "192.168.2.1"),
+            ("192.168.99.99", "192.168.99.99"),
+            ("10.10.1.1", "10.10.1.1"),
+            ("10.0.0.1", "10.0.0.1"),
+            ("1.1.1.1", "1.1.1.1"),
+            ("8.8.8.8", "8.8.8.8"),
+        ]
+
+        self.nmap_profile_choices: List[Tuple[str, str]] = [
+            ("Ping Sweep", "ping"),
+            ("Basic Service", "basic"),
+            ("Vuln Scripts", "vuln"),
+        ]
+
+        self.netcat_port_choices: List[int] = [22, 53, 80, 443]
+
+        self.speedtest_secure_choices: List[Tuple[str, bool]] = [
+            ("On", True),
+            ("Off", False),
+        ]
+
+        self.ping_count_choices: List[int] = [4, 10]
+        self.traceroute_hop_choices: List[int] = [10, 20, 30]
+        self.duration_choices: List[int] = [5, 10, 30]
+
+        self.iperf_port_choices: List[int] = [5001, 5201]
+        self.iperf3_port_choices: List[int] = [5201, 5202]
+
+        self.iperf_direction_choices: List[Tuple[str, bool]] = [
+            ("Normal", False),
+            ("Tradeoff", True),
+        ]
+
+        self.iperf3_direction_choices: List[Tuple[str, bool]] = [
+            ("Normal", False),
+            ("Reverse", True),
+        ]
+
+        # --------------------------------------------------------------
+        # Current tool settings
         # --------------------------------------------------------------
         self.nmap_profile = "ping"
-
         self.netcat_port = 80
-
         self.speedtest_secure = True
 
         self.ping_target = "gateway"
@@ -86,6 +131,33 @@ class MenuApp:
         self.current_index = 0
         self.current_top = 0
         self.current_title = "Main Menu"
+
+    # ------------------------------------------------------------------
+    # Generic menu builders / label helpers
+    # ------------------------------------------------------------------
+    def build_choice_menu(self, choices: List[Tuple[str, Any]], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [
+            MenuItem(label, action=lambda value=value: setter(value))
+            for label, value in choices
+        ]
+
+    def build_value_menu(self, values: List[Any], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [
+            MenuItem(str(value), action=lambda value=value: setter(value))
+            for value in values
+        ]
+
+    def get_choice_label(self, choices: List[Tuple[str, Any]], value: Any) -> str:
+        for label, stored in choices:
+            if stored == value:
+                return label
+        return str(value)
+
+    def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
+        return tuple(label for label, _ in choices)
+
+    def get_menu_path_titles(self) -> List[str]:
+        return [title for _, _, _, title in self.menu_stack] + [self.current_title]
 
     # ------------------------------------------------------------------
     # Menu structure
@@ -141,125 +213,40 @@ class MenuApp:
             MenuItem("Iperf3", submenu=tools_iperf3_menu),
         ]
 
-        nmap_scan_type_menu = [
-            MenuItem("Ping Sweep", action=lambda: self.set_nmap_profile("ping")),
-            MenuItem("Basic Service", action=lambda: self.set_nmap_profile("basic")),
-            MenuItem("Vuln Scripts", action=lambda: self.set_nmap_profile("vuln")),
-        ]
-
         nmap_settings_menu = [
-            MenuItem("Scan Type", submenu=nmap_scan_type_menu),
-        ]
-
-        netcat_port_menu = [
-            MenuItem("22", action=lambda: self.set_netcat_port(22)),
-            MenuItem("53", action=lambda: self.set_netcat_port(53)),
-            MenuItem("80", action=lambda: self.set_netcat_port(80)),
-            MenuItem("443", action=lambda: self.set_netcat_port(443)),
+            MenuItem("Scan Type", submenu=self.build_choice_menu(self.nmap_profile_choices, self.set_nmap_profile)),
         ]
 
         netcat_settings_menu = [
-            MenuItem("Port", submenu=netcat_port_menu),
-        ]
-
-        speedtest_secure_menu = [
-            MenuItem("On", action=lambda: self.set_speedtest_secure(True)),
-            MenuItem("Off", action=lambda: self.set_speedtest_secure(False)),
+            MenuItem("Port", submenu=self.build_value_menu(self.netcat_port_choices, self.set_netcat_port)),
         ]
 
         speedtest_settings_menu = [
-            MenuItem("Secure", submenu=speedtest_secure_menu),
-        ]
-
-        ping_target_menu = [
-            MenuItem("Gateway", action=lambda: self.set_ping_target("gateway")),
-            MenuItem("1.1.1.1", action=lambda: self.set_ping_target("1.1.1.1")),
-            MenuItem("8.8.8.8", action=lambda: self.set_ping_target("8.8.8.8")),
-        ]
-
-        ping_count_menu = [
-            MenuItem("4", action=lambda: self.set_ping_count(4)),
-            MenuItem("10", action=lambda: self.set_ping_count(10)),
+            MenuItem("Secure", submenu=self.build_choice_menu(self.speedtest_secure_choices, self.set_speedtest_secure)),
         ]
 
         ping_settings_menu = [
-            MenuItem("Ping Target", submenu=ping_target_menu),
-            MenuItem("Ping Count", submenu=ping_count_menu),
-        ]
-
-        traceroute_target_menu = [
-            MenuItem("Gateway", action=lambda: self.set_traceroute_target("gateway")),
-            MenuItem("1.1.1.1", action=lambda: self.set_traceroute_target("1.1.1.1")),
-            MenuItem("8.8.8.8", action=lambda: self.set_traceroute_target("8.8.8.8")),
-        ]
-
-        traceroute_hops_menu = [
-            MenuItem("10", action=lambda: self.set_traceroute_max_hops(10)),
-            MenuItem("20", action=lambda: self.set_traceroute_max_hops(20)),
-            MenuItem("30", action=lambda: self.set_traceroute_max_hops(30)),
+            MenuItem("Ping Target", submenu=self.build_choice_menu(self.target_choices, self.set_ping_target)),
+            MenuItem("Ping Count", submenu=self.build_value_menu(self.ping_count_choices, self.set_ping_count)),
         ]
 
         traceroute_settings_menu = [
-            MenuItem("Trace Target", submenu=traceroute_target_menu),
-            MenuItem("Max Hops", submenu=traceroute_hops_menu),
-        ]
-
-        iperf_server_menu = [
-            MenuItem("Gateway", action=lambda: self.set_iperf_server("gateway")),
-            MenuItem("192.168.1.1", action=lambda: self.set_iperf_server("192.168.1.1")),
-            MenuItem("192.168.1.10", action=lambda: self.set_iperf_server("192.168.1.10")),
-        ]
-
-        iperf_port_menu = [
-            MenuItem("5001", action=lambda: self.set_iperf_port(5001)),
-            MenuItem("5201", action=lambda: self.set_iperf_port(5201)),
-        ]
-
-        iperf_direction_menu = [
-            MenuItem("Normal", action=lambda: self.set_iperf_tradeoff(False)),
-            MenuItem("Tradeoff", action=lambda: self.set_iperf_tradeoff(True)),
-        ]
-
-        iperf_duration_menu = [
-            MenuItem("5", action=lambda: self.set_iperf_duration(5)),
-            MenuItem("10", action=lambda: self.set_iperf_duration(10)),
-            MenuItem("30", action=lambda: self.set_iperf_duration(30)),
+            MenuItem("Trace Target", submenu=self.build_choice_menu(self.target_choices, self.set_traceroute_target)),
+            MenuItem("Max Hops", submenu=self.build_value_menu(self.traceroute_hop_choices, self.set_traceroute_max_hops)),
         ]
 
         iperf_settings_menu = [
-            MenuItem("Server", submenu=iperf_server_menu),
-            MenuItem("Port", submenu=iperf_port_menu),
-            MenuItem("Direction", submenu=iperf_direction_menu),
-            MenuItem("Duration", submenu=iperf_duration_menu),
-        ]
-
-        iperf3_server_menu = [
-            MenuItem("Gateway", action=lambda: self.set_iperf3_server("gateway")),
-            MenuItem("192.168.1.1", action=lambda: self.set_iperf3_server("192.168.1.1")),
-            MenuItem("192.168.1.10", action=lambda: self.set_iperf3_server("192.168.1.10")),
-        ]
-
-        iperf3_port_menu = [
-            MenuItem("5201", action=lambda: self.set_iperf3_port(5201)),
-            MenuItem("5202", action=lambda: self.set_iperf3_port(5202)),
-        ]
-
-        iperf3_direction_menu = [
-            MenuItem("Normal", action=lambda: self.set_iperf3_reverse(False)),
-            MenuItem("Reverse", action=lambda: self.set_iperf3_reverse(True)),
-        ]
-
-        iperf3_duration_menu = [
-            MenuItem("5", action=lambda: self.set_iperf3_duration(5)),
-            MenuItem("10", action=lambda: self.set_iperf3_duration(10)),
-            MenuItem("30", action=lambda: self.set_iperf3_duration(30)),
+            MenuItem("Server", submenu=self.build_choice_menu(self.target_choices, self.set_iperf_server)),
+            MenuItem("Port", submenu=self.build_value_menu(self.iperf_port_choices, self.set_iperf_port)),
+            MenuItem("Direction", submenu=self.build_choice_menu(self.iperf_direction_choices, self.set_iperf_tradeoff)),
+            MenuItem("Duration", submenu=self.build_value_menu(self.duration_choices, self.set_iperf_duration)),
         ]
 
         iperf3_settings_menu = [
-            MenuItem("Server", submenu=iperf3_server_menu),
-            MenuItem("Port", submenu=iperf3_port_menu),
-            MenuItem("Direction", submenu=iperf3_direction_menu),
-            MenuItem("Duration", submenu=iperf3_duration_menu),
+            MenuItem("Server", submenu=self.build_choice_menu(self.target_choices, self.set_iperf3_server)),
+            MenuItem("Port", submenu=self.build_value_menu(self.iperf3_port_choices, self.set_iperf3_port)),
+            MenuItem("Direction", submenu=self.build_choice_menu(self.iperf3_direction_choices, self.set_iperf3_reverse)),
+            MenuItem("Duration", submenu=self.build_value_menu(self.duration_choices, self.set_iperf3_duration)),
         ]
 
         power_menu = [
@@ -344,7 +331,6 @@ class MenuApp:
     # ------------------------------------------------------------------
     def ensure_selection_visible(self):
         visible_lines = 8
-
         if self.current_index < self.current_top:
             self.current_top = self.current_index
         elif self.current_index >= self.current_top + visible_lines:
@@ -385,9 +371,6 @@ class MenuApp:
         self.current_index = 0
         self.current_top = 0
         self.current_title = "Main Menu"
-
-    def get_menu_path_titles(self) -> List[str]:
-        return [title for _, _, _, title in self.menu_stack] + [self.current_title]
 
     def check_home_button(self) -> bool:
         if self.lcd.get_key_state("key3"):
@@ -512,6 +495,12 @@ class MenuApp:
         start = self.current_top
         end = min(start + visible_lines, len(self.current_menu))
 
+        nmap_labels = self.get_choice_labels(self.nmap_profile_choices)
+        target_labels = self.get_choice_labels(self.target_choices)
+        speedtest_labels = self.get_choice_labels(self.speedtest_secure_choices)
+        iperf_dir_labels = self.get_choice_labels(self.iperf_direction_choices)
+        iperf3_dir_labels = self.get_choice_labels(self.iperf3_direction_choices)
+
         for idx in range(start, end):
             item = self.current_menu[idx]
 
@@ -526,56 +515,56 @@ class MenuApp:
 
             title = item.title
 
-            if self.current_title == "Scan Type" and title in ("Ping Sweep", "Basic Service", "Vuln Scripts"):
-                if self.scan_profile_label_to_key(title) == self.nmap_profile:
+            if self.current_title == "Scan Type" and title in nmap_labels:
+                if self.get_nmap_profile_label() == title:
                     title = "* " + title
 
-            if self.current_title == "Secure" and title in ("On", "Off"):
-                if (title == "On") == self.speedtest_secure:
+            if self.current_title == "Secure" and title in speedtest_labels:
+                if self.get_speedtest_secure_label() == title:
                     title = "* " + title
 
-            if self.current_title == "Ping Target" and title in ("Gateway", "1.1.1.1", "8.8.8.8"):
+            if self.current_title == "Ping Target" and title in target_labels:
                 if self.get_ping_target_label() == title:
                     title = "* " + title
 
-            if self.current_title == "Ping Count" and title in ("4", "10"):
+            if self.current_title == "Ping Count" and title in tuple(str(v) for v in self.ping_count_choices):
                 if int(title) == self.ping_count:
                     title = "* " + title
 
-            if self.current_title == "Trace Target" and title in ("Gateway", "1.1.1.1", "8.8.8.8"):
+            if self.current_title == "Trace Target" and title in target_labels:
                 if self.get_traceroute_target_label() == title:
                     title = "* " + title
 
-            if self.current_title == "Max Hops" and title in ("10", "20", "30"):
+            if self.current_title == "Max Hops" and title in tuple(str(v) for v in self.traceroute_hop_choices):
                 if int(title) == self.traceroute_max_hops:
                     title = "* " + title
 
-            if self.current_title == "Server" and title in ("Gateway", "192.168.1.1", "192.168.1.10"):
+            if self.current_title == "Server" and title in target_labels:
                 if "Iperf3" in path and self.get_iperf3_server_label() == title:
                     title = "* " + title
                 elif "Iperf" in path and self.get_iperf_server_label() == title:
                     title = "* " + title
 
             if self.current_title == "Port":
-                if "Netcat" in path and title in ("22", "53", "80", "443"):
+                if "Netcat" in path and title in tuple(str(v) for v in self.netcat_port_choices):
                     if int(title) == self.netcat_port:
                         title = "* " + title
-                elif "Iperf3" in path and title in ("5201", "5202"):
+                elif "Iperf3" in path and title in tuple(str(v) for v in self.iperf3_port_choices):
                     if int(title) == self.iperf3_port:
                         title = "* " + title
-                elif "Iperf" in path and title in ("5001", "5201"):
+                elif "Iperf" in path and title in tuple(str(v) for v in self.iperf_port_choices):
                     if int(title) == self.iperf_port:
                         title = "* " + title
 
             if self.current_title == "Direction":
-                if "Iperf3" in path and title in ("Normal", "Reverse"):
+                if "Iperf3" in path and title in iperf3_dir_labels:
                     if self.get_iperf3_direction_label() == title:
                         title = "* " + title
-                elif "Iperf" in path and title in ("Normal", "Tradeoff"):
+                elif "Iperf" in path and title in iperf_dir_labels:
                     if self.get_iperf_direction_label() == title:
                         title = "* " + title
 
-            if self.current_title == "Duration" and title in ("5", "10", "30"):
+            if self.current_title == "Duration" and title in tuple(str(v) for v in self.duration_choices):
                 if "Iperf3" in path and int(title) == self.iperf3_duration:
                     title = "* " + title
                 elif "Iperf" in path and int(title) == self.iperf_duration:
@@ -874,7 +863,6 @@ class MenuApp:
                 text=True,
                 check=False,
             )
-
             for line in proc.stdout.splitlines():
                 parts = line.split()
                 if "via" in parts:
@@ -883,7 +871,6 @@ class MenuApp:
                         return parts[idx + 1]
         except Exception:
             pass
-
         return None
 
     def resolve_target(self, target_name: str) -> Tuple[Optional[str], str]:
@@ -893,30 +880,17 @@ class MenuApp:
         return target_name, target_name
 
     # ------------------------------------------------------------------
-    # Nmap settings
+    # Nmap settings / labels
     # ------------------------------------------------------------------
     def set_nmap_profile(self, profile: str):
         self.nmap_profile = profile
         self.show_message("Nmap Type", ["Set to:", self.get_nmap_profile_label()], wait_for_back=False, delay=1.0)
 
     def get_nmap_profile_label(self) -> str:
-        labels = {
-            "ping": "Ping Sweep",
-            "basic": "Basic Service",
-            "vuln": "Vuln Scripts",
-        }
-        return labels.get(self.nmap_profile, self.nmap_profile)
-
-    def scan_profile_label_to_key(self, label: str) -> str:
-        mapping = {
-            "Ping Sweep": "ping",
-            "Basic Service": "basic",
-            "Vuln Scripts": "vuln",
-        }
-        return mapping.get(label, "")
+        return self.get_choice_label(self.nmap_profile_choices, self.nmap_profile)
 
     # ------------------------------------------------------------------
-    # Netcat settings
+    # Netcat settings / labels
     # ------------------------------------------------------------------
     def set_netcat_port(self, port: int):
         self.netcat_port = port
@@ -926,52 +900,52 @@ class MenuApp:
         return str(self.netcat_port)
 
     # ------------------------------------------------------------------
-    # Speedtest settings
+    # Speedtest settings / labels
     # ------------------------------------------------------------------
     def set_speedtest_secure(self, enabled: bool):
         self.speedtest_secure = enabled
         self.show_message("Speedtest", ["Secure:", self.get_speedtest_secure_label()], wait_for_back=False, delay=1.0)
 
     def get_speedtest_secure_label(self) -> str:
-        return "On" if self.speedtest_secure else "Off"
+        return self.get_choice_label(self.speedtest_secure_choices, self.speedtest_secure)
 
     # ------------------------------------------------------------------
-    # Ping settings
+    # Ping settings / labels
     # ------------------------------------------------------------------
     def set_ping_target(self, target: str):
         self.ping_target = target
         self.show_message("Ping Target", ["Set to:", self.get_ping_target_label()], wait_for_back=False, delay=1.0)
 
     def get_ping_target_label(self) -> str:
-        return "Gateway" if self.ping_target == "gateway" else self.ping_target
+        return self.get_choice_label(self.target_choices, self.ping_target)
 
     def set_ping_count(self, count: int):
         self.ping_count = count
         self.show_message("Ping Count", ["Set to:", str(count)], wait_for_back=False, delay=1.0)
 
     # ------------------------------------------------------------------
-    # Traceroute settings
+    # Traceroute settings / labels
     # ------------------------------------------------------------------
     def set_traceroute_target(self, target: str):
         self.traceroute_target = target
         self.show_message("Trace Target", ["Set to:", self.get_traceroute_target_label()], wait_for_back=False, delay=1.0)
 
     def get_traceroute_target_label(self) -> str:
-        return "Gateway" if self.traceroute_target == "gateway" else self.traceroute_target
+        return self.get_choice_label(self.target_choices, self.traceroute_target)
 
     def set_traceroute_max_hops(self, hops: int):
         self.traceroute_max_hops = hops
         self.show_message("Max Hops", ["Set to:", str(hops)], wait_for_back=False, delay=1.0)
 
     # ------------------------------------------------------------------
-    # Iperf settings
+    # Iperf settings / labels
     # ------------------------------------------------------------------
     def set_iperf_server(self, server: str):
         self.iperf_server = server
         self.show_message("Iperf Server", ["Set to:", self.get_iperf_server_label()], wait_for_back=False, delay=1.0)
 
     def get_iperf_server_label(self) -> str:
-        return "Gateway" if self.iperf_server == "gateway" else self.iperf_server
+        return self.get_choice_label(self.target_choices, self.iperf_server)
 
     def set_iperf_port(self, port: int):
         self.iperf_port = port
@@ -982,21 +956,21 @@ class MenuApp:
         self.show_message("Iperf Dir", ["Set to:", self.get_iperf_direction_label()], wait_for_back=False, delay=1.0)
 
     def get_iperf_direction_label(self) -> str:
-        return "Tradeoff" if self.iperf_tradeoff else "Normal"
+        return self.get_choice_label(self.iperf_direction_choices, self.iperf_tradeoff)
 
     def set_iperf_duration(self, duration: int):
         self.iperf_duration = duration
         self.show_message("Iperf Time", ["Set to:", str(duration)], wait_for_back=False, delay=1.0)
 
     # ------------------------------------------------------------------
-    # Iperf3 settings
+    # Iperf3 settings / labels
     # ------------------------------------------------------------------
     def set_iperf3_server(self, server: str):
         self.iperf3_server = server
         self.show_message("Iperf3 Server", ["Set to:", self.get_iperf3_server_label()], wait_for_back=False, delay=1.0)
 
     def get_iperf3_server_label(self) -> str:
-        return "Gateway" if self.iperf3_server == "gateway" else self.iperf3_server
+        return self.get_choice_label(self.target_choices, self.iperf3_server)
 
     def set_iperf3_port(self, port: int):
         self.iperf3_port = port
@@ -1007,18 +981,17 @@ class MenuApp:
         self.show_message("Iperf3 Dir", ["Set to:", self.get_iperf3_direction_label()], wait_for_back=False, delay=1.0)
 
     def get_iperf3_direction_label(self) -> str:
-        return "Reverse" if self.iperf3_reverse else "Normal"
+        return self.get_choice_label(self.iperf3_direction_choices, self.iperf3_reverse)
 
     def set_iperf3_duration(self, duration: int):
         self.iperf3_duration = duration
         self.show_message("Iperf3 Time", ["Set to:", str(duration)], wait_for_back=False, delay=1.0)
 
     # ------------------------------------------------------------------
-    # Nmap helpers / actions
+    # Nmap actions
     # ------------------------------------------------------------------
     def build_nmap_command(self, subnet: str, own_ip: str) -> List[str]:
         base = ["nmap", "-n", "--exclude", own_ip, "-oX", self.nmap_xml_output_file]
-
         if self.nmap_profile == "ping":
             return base + ["-sn", subnet]
         if self.nmap_profile == "basic":
@@ -1057,7 +1030,6 @@ class MenuApp:
         try:
             with open(self.nmap_text_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1070,10 +1042,8 @@ class MenuApp:
                     draw.text((2, 32), self.fit_text(f"Net: {subnet}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 44), self.fit_text(f"Excl:{own_ip}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 60), f"Scan {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1112,13 +1082,10 @@ class MenuApp:
         try:
             with open(self.nmap_text_output_file, "r") as f:
                 text = f.read()
-
             lines = self.summarize_nmap_output(text)
             if len(lines) <= 2:
                 lines.append("No hosts found")
-
             self.show_message("Last Result", lines)
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1185,7 +1152,7 @@ h1 {{
             self.show_message("HTML Error", [str(e)])
 
     # ------------------------------------------------------------------
-    # Netcat helpers / actions
+    # Netcat actions
     # ------------------------------------------------------------------
     def tcp_connect_check(self, host: str, port: int, timeout: float = 2.0) -> Tuple[bool, str]:
         nc_path = shutil.which("nc")
@@ -1249,12 +1216,9 @@ h1 {{
         try:
             with open(self.netcat_output_file, "r", encoding="utf-8", errors="replace") as f:
                 lines = [line.strip() for line in f.readlines() if line.strip()]
-
             if not lines:
                 lines = ["No output"]
-
             self.show_message("Netcat Last", lines[:8])
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1275,7 +1239,6 @@ h1 {{
         try:
             with open(self.speedtest_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1287,10 +1250,8 @@ h1 {{
                     draw.text((2, 24), "Running...", font=self.font, fill=(255, 255, 255))
                     draw.text((2, 40), f"Secure: {self.get_speedtest_secure_label()}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Test {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1326,13 +1287,10 @@ h1 {{
         try:
             with open(self.speedtest_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             if not lines:
                 lines = ["No output"]
-
             self.show_message(title, lines[:8])
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1355,7 +1313,6 @@ h1 {{
         try:
             with open(self.ping_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1368,10 +1325,8 @@ h1 {{
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 46), f"Cnt: {self.ping_count}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 62), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1407,13 +1362,10 @@ h1 {{
         try:
             with open(self.ping_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
-
             self.show_scrollable_lines(title, raw_lines)
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1436,7 +1388,6 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1449,10 +1400,8 @@ h1 {{
                     draw.text((2, 34), self.fit_text(f"IP : {target}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 46), f"Hop: {self.traceroute_max_hops}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 62), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1488,13 +1437,10 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
-
             self.show_scrollable_lines(title, raw_lines)
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1524,7 +1470,6 @@ h1 {{
         try:
             with open(self.iperf_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1538,10 +1483,8 @@ h1 {{
                     draw.text((2, 44), self.fit_text(f"Dir: {self.get_iperf_direction_label()}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Sec: {self.iperf_duration}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 70), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1577,13 +1520,10 @@ h1 {{
         try:
             with open(self.iperf_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
-
             self.show_scrollable_lines(title, raw_lines)
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
@@ -1613,7 +1553,6 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
 
@@ -1627,10 +1566,8 @@ h1 {{
                     draw.text((2, 44), self.fit_text(f"Dir: {self.get_iperf3_direction_label()}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Sec: {self.iperf3_duration}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 70), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1666,13 +1603,10 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
             raw_lines = [line.rstrip() for line in text.splitlines()]
             if not raw_lines:
                 raw_lines = ["No output"]
-
             self.show_scrollable_lines(title, raw_lines)
-
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
