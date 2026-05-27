@@ -8,6 +8,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import textwrap
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -246,16 +247,13 @@ class MenuApp:
 
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), (0, 0, 0))
         draw = ImageDraw.Draw(img)
-
         draw.rectangle((0, 0, self.lcd.width, 20), fill=(0, 0, 80))
         draw.rectangle((0, self.lcd.height - 16, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
-
         draw.text((18, 18), "Raspberry Pi", font=self.font, fill=(255, 255, 255))
         draw.text((34, 36), "Network", font=self.font, fill=(0, 255, 0))
         draw.text((42, 50), "Toolkit", font=self.font, fill=(0, 255, 255))
         draw.text((20, 80), "Starting...", font=self.font, fill=(255, 255, 0))
         draw.text((8, self.lcd.height - 12), "Please wait", font=self.font, fill=(128, 128, 128))
-
         self.lcd.LCD_ShowImage(img)
         time.sleep(duration)
 
@@ -264,7 +262,6 @@ class MenuApp:
     # ------------------------------------------------------------------
     def run(self):
         self.draw_menu()
-
         while True:
             key = self.read_key()
             if key is None:
@@ -295,7 +292,6 @@ class MenuApp:
     def enter_item(self):
         if not self.current_menu:
             return
-
         item = self.current_menu[self.current_index]
 
         if item.submenu:
@@ -354,6 +350,77 @@ class MenuApp:
         if len(text) <= max_chars:
             return text
         return text[: max_chars - 3] + "..."
+
+    def wrap_lines_for_display(self, lines: List[str], width: int = 20) -> List[str]:
+        wrapped = []
+        for line in lines:
+            line = str(line).rstrip()
+            if not line:
+                wrapped.append("")
+                continue
+
+            chunks = textwrap.wrap(
+                line,
+                width=width,
+                replace_whitespace=False,
+                drop_whitespace=False,
+                break_long_words=True,
+                break_on_hyphens=False,
+            )
+            if chunks:
+                wrapped.extend(chunks)
+            else:
+                wrapped.append("")
+        return wrapped
+
+    def show_scrollable_lines(self, title: str, lines: List[str], width: int = 20):
+        wrapped = self.wrap_lines_for_display(lines, width=width)
+        if not wrapped:
+            wrapped = ["No output"]
+
+        top_index = 0
+        line_h = 11
+        visible_lines = 8
+
+        while True:
+            img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
+            draw = ImageDraw.Draw(img)
+
+            draw.rectangle((0, 0, self.lcd.width, 14), fill=(0, 0, 64))
+            draw.text((2, 2), self.fit_text(title, 20), font=self.font, fill=self.text_color)
+
+            y = 16
+            end_index = min(top_index + visible_lines, len(wrapped))
+            for line in wrapped[top_index:end_index]:
+                draw.text((2, y), self.fit_text(line, 20), font=self.font, fill=self.text_color)
+                y += line_h
+
+            footer = f"{top_index + 1}-{end_index}/{len(wrapped)}"
+            draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
+            draw.text((2, self.lcd.height - 12), self.fit_text(footer, 20), font=self.font, fill=(128, 128, 128))
+
+            self.lcd.LCD_ShowImage(img)
+
+            if self.check_home_button():
+                return
+
+            if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
+                time.sleep(0.08)
+                return
+
+            if self.lcd.get_key_state("up"):
+                if top_index > 0:
+                    top_index -= 1
+                self.wait_for_key_release("up")
+                continue
+
+            if self.lcd.get_key_state("down"):
+                if top_index < max(0, len(wrapped) - visible_lines):
+                    top_index += 1
+                self.wait_for_key_release("down")
+                continue
+
+            time.sleep(0.05)
 
     def draw_menu(self):
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
@@ -443,10 +510,7 @@ class MenuApp:
         elif self.current_title == "Traceroute":
             footer = self.fit_text(f"{self.get_traceroute_target_label()} h{self.traceroute_max_hops}", 20)
         elif self.current_title == "Iperf3":
-            footer = self.fit_text(
-                f"{self.get_iperf3_server_label()} {self.get_iperf3_direction_label()}",
-                20,
-            )
+            footer = self.fit_text(f"{self.get_iperf3_server_label()} {self.get_iperf3_direction_label()}", 20)
         elif self.current_title == "Scan Type":
             footer = "Now: " + self.get_nmap_profile_label()
         elif self.current_title == "Secure":
@@ -555,7 +619,6 @@ class MenuApp:
     # ------------------------------------------------------------------
     def run_power_command(self, action: str):
         systemctl_path = shutil.which("systemctl") or "/bin/systemctl"
-
         try:
             os.sync()
         except Exception:
@@ -612,7 +675,6 @@ class MenuApp:
 
             img = Image.new("RGB", (self.lcd.width, self.lcd.height), (0, 0, 0))
             draw = ImageDraw.Draw(img)
-
             draw.text((2, 2), "System Stats", font=self.font, fill=(0, 255, 255))
 
             y = 16
@@ -684,14 +746,12 @@ class MenuApp:
             addrs = psutil.net_if_addrs()
             if "eth0" not in addrs:
                 return None, None
-
             for addr in addrs["eth0"]:
                 if addr.family == socket.AF_INET and addr.address and addr.netmask:
                     iface = ipaddress.IPv4Interface(f"{addr.address}/{addr.netmask}")
                     return str(iface.ip), str(iface.network)
         except Exception:
             pass
-
         return None, None
 
     def get_default_gateway(self, interface: str = "eth0") -> Optional[str]:
@@ -703,7 +763,6 @@ class MenuApp:
                 text=True,
                 check=False,
             )
-
             for line in proc.stdout.splitlines():
                 parts = line.split()
                 if "via" in parts:
@@ -712,7 +771,6 @@ class MenuApp:
                         return parts[idx + 1]
         except Exception:
             pass
-
         return None
 
     def resolve_target(self, target_name: str) -> Tuple[Optional[str], str]:
@@ -821,13 +879,7 @@ class MenuApp:
     # Nmap helpers / actions
     # ------------------------------------------------------------------
     def build_nmap_command(self, subnet: str, own_ip: str) -> List[str]:
-        base = [
-            "nmap",
-            "-n",
-            "--exclude", own_ip,
-            "-oX", self.nmap_xml_output_file,
-        ]
-
+        base = ["nmap", "-n", "--exclude", own_ip, "-oX", self.nmap_xml_output_file]
         if self.nmap_profile == "ping":
             return base + ["-sn", subnet]
         if self.nmap_profile == "basic":
@@ -866,9 +918,9 @@ class MenuApp:
         try:
             with open(self.nmap_text_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
@@ -903,7 +955,6 @@ class MenuApp:
 
             with open(self.nmap_text_output_file, "r") as f:
                 result_text = f.read()
-
             self.show_message("Nmap Done", self.summarize_nmap_output(result_text))
 
         except Exception as e:
@@ -991,7 +1042,6 @@ h1 {{
     # ------------------------------------------------------------------
     def tcp_connect_check(self, host: str, port: int, timeout: float = 2.0) -> Tuple[bool, str]:
         nc_path = shutil.which("nc")
-
         if nc_path:
             try:
                 proc = subprocess.run(
@@ -1074,9 +1124,9 @@ h1 {{
         try:
             with open(self.speedtest_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
@@ -1131,23 +1181,6 @@ h1 {{
     # ------------------------------------------------------------------
     # Ping helpers / actions
     # ------------------------------------------------------------------
-    def summarize_ping_output(self, text: str) -> List[str]:
-        lines = []
-        raw = [line.strip() for line in text.splitlines() if line.strip()]
-
-        for line in raw:
-            if line.startswith("PING "):
-                lines.append(line[:40])
-            elif "packets transmitted" in line:
-                lines.append(line)
-            elif "min/avg/max" in line or "round-trip min/avg/max" in line:
-                lines.append(line)
-
-        if not lines:
-            lines = raw[:6]
-
-        return lines[:8]
-
     def run_ping(self):
         target, label = self.resolve_target(self.ping_target)
         if not target:
@@ -1164,9 +1197,9 @@ h1 {{
         try:
             with open(self.ping_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
@@ -1204,7 +1237,7 @@ h1 {{
         except Exception as e:
             self.show_message("Ping Error", [str(e)])
 
-    def show_last_ping_result(self, title: str = "Last Result"):
+    def show_last_ping_result(self, title: str = "Ping Result"):
         if not os.path.exists(self.ping_output_file):
             self.show_message("Ping", ["No saved result"])
             return
@@ -1212,26 +1245,16 @@ h1 {{
         try:
             with open(self.ping_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-            lines = self.summarize_ping_output(text)
-            if not lines:
-                lines = ["No output"]
-            self.show_message(title, lines[:8])
+            raw_lines = [line.rstrip() for line in text.splitlines()]
+            if not raw_lines:
+                raw_lines = ["No output"]
+            self.show_scrollable_lines(title, raw_lines)
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
     # ------------------------------------------------------------------
     # Traceroute helpers / actions
     # ------------------------------------------------------------------
-    def summarize_traceroute_output(self, text: str) -> List[str]:
-        raw = [line.strip() for line in text.splitlines() if line.strip()]
-        if not raw:
-            return ["No output"]
-
-        lines = [raw[0][:40]]
-        for line in raw[1:6]:
-            lines.append(" ".join(line.split())[:40])
-        return lines[:8]
-
     def run_traceroute(self):
         traceroute_path = shutil.which("traceroute")
         if traceroute_path is None:
@@ -1248,9 +1271,9 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
@@ -1288,7 +1311,7 @@ h1 {{
         except Exception as e:
             self.show_message("Trace Error", [str(e)])
 
-    def show_last_traceroute_result(self, title: str = "Last Result"):
+    def show_last_traceroute_result(self, title: str = "Trace Result"):
         if not os.path.exists(self.traceroute_output_file):
             self.show_message("Traceroute", ["No saved result"])
             return
@@ -1296,33 +1319,16 @@ h1 {{
         try:
             with open(self.traceroute_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-            lines = self.summarize_traceroute_output(text)
-            self.show_message(title, lines[:8])
+            raw_lines = [line.rstrip() for line in text.splitlines()]
+            if not raw_lines:
+                raw_lines = ["No output"]
+            self.show_scrollable_lines(title, raw_lines)
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
     # ------------------------------------------------------------------
     # Iperf3 helpers / actions
     # ------------------------------------------------------------------
-    def summarize_iperf3_output(self, text: str) -> List[str]:
-        raw = [line.strip() for line in text.splitlines() if line.strip()]
-        lines = []
-
-        for line in raw:
-            if line.startswith("Connecting to host"):
-                lines.append(line)
-            elif "sender" in line or "receiver" in line:
-                lines.append(line)
-            elif line.startswith("[ ID]"):
-                continue
-            elif "iperf Done." in line:
-                lines.append(line)
-
-        if not lines:
-            lines = raw[:6]
-
-        return [self.fit_text(line, 40) for line in lines[:8]]
-
     def run_iperf3(self):
         iperf_path = shutil.which("iperf3")
         if iperf_path is None:
@@ -1346,23 +1352,20 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "w") as out:
                 proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, text=True)
-
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
-
                     draw.text((2, 2), "Iperf3", font=self.font, fill=(0, 255, 255))
                     draw.text((2, 20), self.fit_text(f"Srv: {label}", 20), font=self.font, fill=(255, 255, 255))
                     draw.text((2, 32), f"Prt: {self.iperf3_port}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 44), self.fit_text(f"Dir: {self.get_iperf3_direction_label()}", 20), font=self.font, fill=(255, 255, 0))
                     draw.text((2, 56), f"Sec: {self.iperf3_duration}", font=self.font, fill=(255, 255, 0))
                     draw.text((2, 70), f"Run {spinner[i % len(spinner)]}", font=self.font, fill=(0, 255, 0))
-
                     draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
                     draw.text((2, self.lcd.height - 12), "K1=Cancel K3=Home", font=self.font, fill=(128, 128, 128))
-
                     self.lcd.LCD_ShowImage(img)
                     i += 1
 
@@ -1390,7 +1393,7 @@ h1 {{
         except Exception as e:
             self.show_message("Iperf3 Err", [str(e)])
 
-    def show_last_iperf3_result(self, title: str = "Last Result"):
+    def show_last_iperf3_result(self, title: str = "Iperf3 Result"):
         if not os.path.exists(self.iperf3_output_file):
             self.show_message("Iperf3", ["No saved result"])
             return
@@ -1398,13 +1401,10 @@ h1 {{
         try:
             with open(self.iperf3_output_file, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()
-
-            lines = self.summarize_iperf3_output(text)
-            if not lines:
-                lines = ["No output"]
-
-            self.show_message(title, lines[:8])
-
+            raw_lines = [line.rstrip() for line in text.splitlines()]
+            if not raw_lines:
+                raw_lines = ["No output"]
+            self.show_scrollable_lines(title, raw_lines)
         except Exception as e:
             self.show_message("Read Error", [str(e)])
 
