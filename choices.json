@@ -1,0 +1,37 @@
+{
+  "target_choices": [
+    ["Gateway", "gateway"],
+    ["192.168.178.1", "192.168.178.1"],
+    ["172.16.0.1", "172.16.0.1"],
+    ["192.168.0.1", "192.168.0.1"],
+    ["192.168.2.1", "192.168.2.1"],
+    ["192.168.99.99", "192.168.99.99"],
+    ["10.10.1.1", "10.10.1.1"],
+    ["10.0.0.1", "10.0.0.1"],
+    ["1.1.1.1", "1.1.1.1"],
+    ["8.8.8.8", "8.8.8.8"]
+  ],
+  "nmap_profile_choices": [
+    ["Ping Sweep", "ping"],
+    ["Basic Service", "basic"],
+    ["Vuln Scripts", "vuln"]
+  ],
+  "netcat_port_choices": [22, 53, 80, 443],
+  "speedtest_secure_choices": [
+    ["On", true],
+    ["Off", false]
+  ],
+  "ping_count_choices": [4, 10],
+  "traceroute_hop_choices": [10, 20, 30],
+  "duration_choices": [5, 10, 30],
+  "iperf_port_choices": [5001, 5202, 4711],
+  "iperf3_port_choices": [5201, 5202],
+  "iperf_direction_choices": [
+    ["Normal", false],
+    ["Tradeoff", true]
+  ],
+  "iperf3_direction_choices": [
+    ["Normal", false],
+    ["Reverse", true]
+  ]
+}

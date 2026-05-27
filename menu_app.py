@@ -41,73 +41,9 @@ class MenuApp:
 
         # --------------------------------------------------------------
         # Central choice lists
-        # Edit these to add/remove choices later
+        # Loaded from JSON if available, otherwise defaults are used
         # --------------------------------------------------------------
-        self.target_choices: List[Tuple[str, str]] = [
-            ("Gateway", "gateway"),
-            ("192.168.178.1", "192.168.178.1"),
-            ("172.16.0.1", "172.16.0.1"),
-            ("192.168.0.1", "192.168.0.1"),
-            ("192.168.2.1", "192.168.2.1"),
-            ("192.168.99.99", "192.168.99.99"),
-            ("10.10.1.1", "10.10.1.1"),
-            ("10.0.0.1", "10.0.0.1"),
-            ("1.1.1.1", "1.1.1.1"),
-            ("8.8.8.8", "8.8.8.8"),
-        ]
-
-        self.nmap_profile_choices: List[Tuple[str, str]] = [
-            ("Ping Sweep", "ping"),
-            ("Basic Service", "basic"),
-            ("Vuln Scripts", "vuln"),
-        ]
-
-        self.netcat_port_choices: List[int] = [22, 53, 80, 443]
-
-        self.speedtest_secure_choices: List[Tuple[str, bool]] = [
-            ("On", True),
-            ("Off", False),
-        ]
-
-        self.ping_count_choices: List[int] = [4, 10]
-        self.traceroute_hop_choices: List[int] = [10, 20, 30]
-        self.duration_choices: List[int] = [5, 10, 30]
-
-        self.iperf_port_choices: List[int] = [5001, 5201]
-        self.iperf3_port_choices: List[int] = [5201, 5202]
-
-        self.iperf_direction_choices: List[Tuple[str, bool]] = [
-            ("Normal", False),
-            ("Tradeoff", True),
-        ]
-
-        self.iperf3_direction_choices: List[Tuple[str, bool]] = [
-            ("Normal", False),
-            ("Reverse", True),
-        ]
-
-        # --------------------------------------------------------------
-        # Current tool settings
-        # --------------------------------------------------------------
-        self.nmap_profile = "ping"
-        self.netcat_port = 80
-        self.speedtest_secure = True
-
-        self.ping_target = "gateway"
-        self.ping_count = 4
-
-        self.traceroute_target = "gateway"
-        self.traceroute_max_hops = 20
-
-        self.iperf_server = "gateway"
-        self.iperf_port = 5001
-        self.iperf_tradeoff = False
-        self.iperf_duration = 10
-
-        self.iperf3_server = "gateway"
-        self.iperf3_port = 5201
-        self.iperf3_reverse = False
-        self.iperf3_duration = 10
+        self.load_choice_config()
 
         # --------------------------------------------------------------
         # Output files
@@ -155,6 +91,137 @@ class MenuApp:
 
     def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
         return tuple(label for label, _ in choices)
+
+    def load_choice_config(self):
+        """
+        Load menu choice lists from menu_choices.json.
+        Falls back to built-in defaults if file is missing or invalid.
+        """
+        defaults = {
+            "target_choices": [
+                ("Gateway", "gateway"),
+                ("192.168.178.1", "192.168.178.1"),
+                ("172.16.0.1", "172.16.0.1"),
+                ("192.168.0.1", "192.168.0.1"),
+                ("192.168.2.1", "192.168.2.1"),
+                ("192.168.99.99", "192.168.99.99"),
+                ("10.10.1.1", "10.10.1.1"),
+                ("10.0.0.1", "10.0.0.1"),
+                ("1.1.1.1", "1.1.1.1"),
+                ("8.8.8.8", "8.8.8.8"),
+            ],
+            "nmap_profile_choices": [
+                ("Ping Sweep", "ping"),
+                ("Basic Service", "basic"),
+                ("Vuln Scripts", "vuln"),
+            ],
+            "netcat_port_choices": [22, 53, 80, 443],
+            "speedtest_secure_choices": [
+                ("On", True),
+                ("Off", False),
+            ],
+            "ping_count_choices": [4, 10],
+            "traceroute_hop_choices": [10, 20, 30],
+            "duration_choices": [5, 10, 30],
+            "iperf_port_choices": [5001, 5201],
+            "iperf3_port_choices": [5201, 5202],
+            "iperf_direction_choices": [
+                ("Normal", False),
+                ("Tradeoff", True),
+            ],
+            "iperf3_direction_choices": [
+                ("Normal", False),
+                ("Reverse", True),
+            ],
+        }
+
+        config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "menu_choices.json")
+        data = {}
+
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+
+        self.target_choices = self.normalize_choice_pairs(
+            data.get("target_choices", defaults["target_choices"]),
+            defaults["target_choices"],
+        )
+        self.nmap_profile_choices = self.normalize_choice_pairs(
+            data.get("nmap_profile_choices", defaults["nmap_profile_choices"]),
+            defaults["nmap_profile_choices"],
+        )
+        self.netcat_port_choices = self.normalize_simple_list(
+            data.get("netcat_port_choices", defaults["netcat_port_choices"]),
+            defaults["netcat_port_choices"],
+            int,
+        )
+        self.speedtest_secure_choices = self.normalize_choice_pairs(
+            data.get("speedtest_secure_choices", defaults["speedtest_secure_choices"]),
+            defaults["speedtest_secure_choices"],
+        )
+        self.ping_count_choices = self.normalize_simple_list(
+            data.get("ping_count_choices", defaults["ping_count_choices"]),
+            defaults["ping_count_choices"],
+            int,
+        )
+        self.traceroute_hop_choices = self.normalize_simple_list(
+            data.get("traceroute_hop_choices", defaults["traceroute_hop_choices"]),
+            defaults["traceroute_hop_choices"],
+            int,
+        )
+        self.duration_choices = self.normalize_simple_list(
+            data.get("duration_choices", defaults["duration_choices"]),
+            defaults["duration_choices"],
+            int,
+        )
+        self.iperf_port_choices = self.normalize_simple_list(
+            data.get("iperf_port_choices", defaults["iperf_port_choices"]),
+            defaults["iperf_port_choices"],
+            int,
+        )
+        self.iperf3_port_choices = self.normalize_simple_list(
+            data.get("iperf3_port_choices", defaults["iperf3_port_choices"]),
+            defaults["iperf3_port_choices"],
+            int,
+        )
+        self.iperf_direction_choices = self.normalize_choice_pairs(
+            data.get("iperf_direction_choices", defaults["iperf_direction_choices"]),
+            defaults["iperf_direction_choices"],
+        )
+        self.iperf3_direction_choices = self.normalize_choice_pairs(
+            data.get("iperf3_direction_choices", defaults["iperf3_direction_choices"]),
+            defaults["iperf3_direction_choices"],
+        )
+
+    def normalize_choice_pairs(self, value, fallback):
+        """
+        Ensure choices are a list of (label, value) tuples.
+        """
+        try:
+            result = []
+            for item in value:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    result.append((item[0], item[1]))
+            if result:
+                return result
+        except Exception:
+            pass
+        return fallback
+
+    def normalize_simple_list(self, value, fallback, cast_type=int):
+        """
+        Ensure choices are a simple typed list.
+        """
+        try:
+            result = [cast_type(v) for v in value]
+            if result:
+                return result
+        except Exception:
+            pass
+        return fallback
 
     def get_menu_path_titles(self) -> List[str]:
         return [title for _, _, _, title in self.menu_stack] + [self.current_title]
