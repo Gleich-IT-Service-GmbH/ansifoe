@@ -39,7 +39,9 @@ class MenuApp:
         self._external_ip_cache = "N/A"
         self._external_ip_last_update = 0
 
+        # --------------------------------------------------------------
         # Tool settings
+        # --------------------------------------------------------------
         self.nmap_profile = "ping"
 
         self.netcat_port = 80
@@ -62,7 +64,9 @@ class MenuApp:
         self.iperf3_reverse = False
         self.iperf3_duration = 10
 
+        # --------------------------------------------------------------
         # Output files
+        # --------------------------------------------------------------
         self.nmap_text_output_file = os.path.expanduser("~/nmap_last.txt")
         self.nmap_xml_output_file = os.path.expanduser("~/nmap_last.xml")
         self.nmap_html_output_file = os.path.expanduser("~/nmap_last.html")
@@ -76,9 +80,11 @@ class MenuApp:
 
         self.root_menu = self.build_menu()
 
-        self.menu_stack: List[Tuple[List[MenuItem], int, str]] = []
+        # (menu_list, selected_index, top_index, title)
+        self.menu_stack: List[Tuple[List[MenuItem], int, int, str]] = []
         self.current_menu = self.root_menu
         self.current_index = 0
+        self.current_top = 0
         self.current_title = "Main Menu"
 
     # ------------------------------------------------------------------
@@ -336,9 +342,18 @@ class MenuApp:
     # ------------------------------------------------------------------
     # Navigation
     # ------------------------------------------------------------------
+    def ensure_selection_visible(self):
+        visible_lines = 8
+
+        if self.current_index < self.current_top:
+            self.current_top = self.current_index
+        elif self.current_index >= self.current_top + visible_lines:
+            self.current_top = self.current_index - visible_lines + 1
+
     def move_selection(self, delta: int):
         if self.current_menu:
             self.current_index = (self.current_index + delta) % len(self.current_menu)
+            self.ensure_selection_visible()
 
     def enter_item(self):
         if not self.current_menu:
@@ -347,9 +362,12 @@ class MenuApp:
         item = self.current_menu[self.current_index]
 
         if item.submenu:
-            self.menu_stack.append((self.current_menu, self.current_index, self.current_title))
+            self.menu_stack.append(
+                (self.current_menu, self.current_index, self.current_top, self.current_title)
+            )
             self.current_menu = item.submenu
             self.current_index = 0
+            self.current_top = 0
             self.current_title = item.title
             return
 
@@ -359,16 +377,17 @@ class MenuApp:
     def go_back(self):
         if not self.menu_stack:
             return
-        self.current_menu, self.current_index, self.current_title = self.menu_stack.pop()
+        self.current_menu, self.current_index, self.current_top, self.current_title = self.menu_stack.pop()
 
     def go_home(self):
         self.menu_stack.clear()
         self.current_menu = self.root_menu
         self.current_index = 0
+        self.current_top = 0
         self.current_title = "Main Menu"
 
     def get_menu_path_titles(self) -> List[str]:
-        return [title for _, _, title in self.menu_stack] + [self.current_title]
+        return [title for _, _, _, title in self.menu_stack] + [self.current_title]
 
     def check_home_button(self) -> bool:
         if self.lcd.get_key_state("key3"):
@@ -488,10 +507,13 @@ class MenuApp:
 
         y = 18
         line_h = 12
+        visible_lines = 8
 
-        for idx, item in enumerate(self.current_menu):
-            if y + line_h > self.lcd.height - 16:
-                break
+        start = self.current_top
+        end = min(start + visible_lines, len(self.current_menu))
+
+        for idx in range(start, end):
+            item = self.current_menu[idx]
 
             selected = idx == self.current_index
             if selected:
@@ -616,7 +638,7 @@ class MenuApp:
             elif "Iperf" in path:
                 footer = "Now: " + str(self.iperf_duration)
         elif self.current_title == "Settings":
-            footer = "K1 Back K3 Home"
+            footer = f"{self.current_index + 1}/{len(self.current_menu)}"
         elif self.current_title == "Power":
             footer = "Reboot/Shutdown"
 
@@ -995,22 +1017,14 @@ class MenuApp:
     # Nmap helpers / actions
     # ------------------------------------------------------------------
     def build_nmap_command(self, subnet: str, own_ip: str) -> List[str]:
-        base = [
-            "nmap",
-            "-n",
-            "--exclude", own_ip,
-            "-oX", self.nmap_xml_output_file,
-        ]
+        base = ["nmap", "-n", "--exclude", own_ip, "-oX", self.nmap_xml_output_file]
 
         if self.nmap_profile == "ping":
             return base + ["-sn", subnet]
-
         if self.nmap_profile == "basic":
             return base + ["-sV", "--top-ports", "100", "-T4", subnet]
-
         if self.nmap_profile == "vuln":
             return base + ["-sV", "--script", "vuln", "-T4", subnet]
-
         return base + ["-sn", subnet]
 
     def summarize_nmap_output(self, text: str) -> List[str]:
@@ -1021,17 +1035,11 @@ class MenuApp:
                 if host not in hosts:
                     hosts.append(host)
 
-        lines = [
-            "Type: " + self.get_nmap_profile_label(),
-            f"Hosts: {len(hosts)}",
-        ]
-
+        lines = ["Type: " + self.get_nmap_profile_label(), f"Hosts: {len(hosts)}"]
         for host in hosts[:6]:
             lines.append(host)
-
         if len(hosts) > 6:
             lines.append("...")
-
         return lines
 
     def run_nmap_scan(self):
@@ -1125,24 +1133,12 @@ class MenuApp:
         try:
             if xml_exists and shutil.which("xsltproc") is not None:
                 subprocess.run(
-                    [
-                        "xsltproc",
-                        "-o", self.nmap_html_output_file,
-                        self.nmap_xml_output_file,
-                    ],
+                    ["xsltproc", "-o", self.nmap_html_output_file, self.nmap_xml_output_file],
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )
-
-                self.show_message(
-                    "HTML Saved",
-                    [
-                        "Created:",
-                        os.path.basename(self.nmap_html_output_file),
-                        "Method: xsltproc",
-                    ],
-                )
+                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: xsltproc"])
                 return
 
             if txt_exists:
@@ -1180,14 +1176,7 @@ h1 {{
                 with open(self.nmap_html_output_file, "w", encoding="utf-8") as f:
                     f.write(html_doc)
 
-                self.show_message(
-                    "HTML Saved",
-                    [
-                        "Created:",
-                        os.path.basename(self.nmap_html_output_file),
-                        "Method: simple",
-                    ],
-                )
+                self.show_message("HTML Saved", ["Created:", os.path.basename(self.nmap_html_output_file), "Method: simple"])
                 return
 
             self.show_message("Convert HTML", ["Nothing to convert"])
@@ -1211,9 +1200,7 @@ h1 {{
                     check=False,
                 )
                 output = (proc.stdout + "\n" + proc.stderr).strip()
-                return proc.returncode == 0, output or (
-                    "Connected" if proc.returncode == 0 else "Connection failed"
-                )
+                return proc.returncode == 0, output or ("Connected" if proc.returncode == 0 else "Connection failed")
             except Exception as e:
                 return False, str(e)
 
@@ -1241,12 +1228,7 @@ h1 {{
 
         ok, output = self.tcp_connect_check(gateway, port)
 
-        lines = [
-            f"Host: {gateway}",
-            f"Port: {port}",
-            "OPEN" if ok else "CLOSED",
-        ]
-
+        lines = [f"Host: {gateway}", f"Port: {port}", "OPEN" if ok else "CLOSED"]
         extra = [line.strip() for line in output.splitlines() if line.strip()]
         lines.extend(extra[:4])
 
@@ -1376,6 +1358,7 @@ h1 {{
 
                 spinner = ["|", "/", "-", "\\"]
                 i = 0
+
                 while proc.poll() is None:
                     img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
                     draw = ImageDraw.Draw(img)
