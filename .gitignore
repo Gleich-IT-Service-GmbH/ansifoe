@@ -16,6 +16,8 @@ dist/
 # IDE / editor
 .vscode/
 .idea/
+*.code-workspace
+
 
 # OS files
 .DS_Store
