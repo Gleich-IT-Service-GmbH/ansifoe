@@ -13,7 +13,7 @@ import textwrap
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple, Any
+from typing import Any, Callable, List, Optional, Tuple
 
 import psutil
 from PIL import Image, ImageDraw, ImageFont
@@ -41,8 +41,7 @@ class MenuApp:
         self._external_ip_last_update = 0
 
         # --------------------------------------------------------------
-        # Central choice lists
-        # Loaded from JSON if available, otherwise defaults are used
+        # Load choice lists from JSON
         # --------------------------------------------------------------
         self.load_choice_config()
 
@@ -93,34 +92,9 @@ class MenuApp:
         self.current_title = "Main Menu"
 
     # ------------------------------------------------------------------
-    # Generic menu builders / label helpers
+    # Choice config / menu building helpers
     # ------------------------------------------------------------------
-    def build_choice_menu(self, choices: List[Tuple[str, Any]], setter: Callable[[Any], None]) -> List[MenuItem]:
-        return [
-            MenuItem(label, action=lambda value=value: setter(value))
-            for label, value in choices
-        ]
-
-    def build_value_menu(self, values: List[Any], setter: Callable[[Any], None]) -> List[MenuItem]:
-        return [
-            MenuItem(str(value), action=lambda value=value: setter(value))
-            for value in values
-        ]
-
-    def get_choice_label(self, choices: List[Tuple[str, Any]], value: Any) -> str:
-        for label, stored in choices:
-            if stored == value:
-                return label
-        return str(value)
-
-    def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
-        return tuple(label for label, _ in choices)
-
     def load_choice_config(self):
-        """
-        Load menu choice lists from menu_choices.json.
-        Falls back to built-in defaults if file is missing or invalid.
-        """
         defaults = {
             "target_choices": [
                 ("Gateway", "gateway"),
@@ -221,9 +195,6 @@ class MenuApp:
         )
 
     def normalize_choice_pairs(self, value, fallback):
-        """
-        Ensure choices are a list of (label, value) tuples.
-        """
         try:
             result = []
             for item in value:
@@ -236,9 +207,6 @@ class MenuApp:
         return fallback
 
     def normalize_simple_list(self, value, fallback, cast_type=int):
-        """
-        Ensure choices are a simple typed list.
-        """
         try:
             result = [cast_type(v) for v in value]
             if result:
@@ -246,6 +214,21 @@ class MenuApp:
         except Exception:
             pass
         return fallback
+
+    def build_choice_menu(self, choices: List[Tuple[str, Any]], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [MenuItem(label, action=lambda value=value: setter(value)) for label, value in choices]
+
+    def build_value_menu(self, values: List[Any], setter: Callable[[Any], None]) -> List[MenuItem]:
+        return [MenuItem(str(value), action=lambda value=value: setter(value)) for value in values]
+
+    def get_choice_label(self, choices: List[Tuple[str, Any]], value: Any) -> str:
+        for label, stored in choices:
+            if stored == value:
+                return label
+        return str(value)
+
+    def get_choice_labels(self, choices: List[Tuple[str, Any]]) -> Tuple[str, ...]:
+        return tuple(label for label, _ in choices)
 
     def get_menu_path_titles(self) -> List[str]:
         return [title for _, _, _, title in self.menu_stack] + [self.current_title]
@@ -378,25 +361,21 @@ class MenuApp:
 
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), (0, 0, 0))
         draw = ImageDraw.Draw(img)
-
         draw.rectangle((0, 0, self.lcd.width, 20), fill=(0, 0, 80))
         draw.rectangle((0, self.lcd.height - 16, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
-
         draw.text((18, 18), "Raspberry Pi", font=self.font, fill=(255, 255, 255))
         draw.text((34, 36), "Network", font=self.font, fill=(0, 255, 0))
         draw.text((42, 50), "Toolkit", font=self.font, fill=(0, 255, 255))
         draw.text((20, 80), "Starting...", font=self.font, fill=(255, 255, 0))
         draw.text((8, self.lcd.height - 12), "Please wait", font=self.font, fill=(128, 128, 128))
-
         self.lcd.LCD_ShowImage(img)
         time.sleep(duration)
 
     # ------------------------------------------------------------------
-    # Main loop
+    # Main loop / navigation
     # ------------------------------------------------------------------
     def run(self):
         self.draw_menu()
-
         while True:
             key = self.read_key()
             if key is None:
@@ -417,9 +396,6 @@ class MenuApp:
             self.wait_for_key_release(key)
             self.draw_menu()
 
-    # ------------------------------------------------------------------
-    # Navigation
-    # ------------------------------------------------------------------
     def ensure_selection_visible(self):
         visible_lines = 8
         if self.current_index < self.current_top:
@@ -435,9 +411,7 @@ class MenuApp:
     def enter_item(self):
         if not self.current_menu:
             return
-
         item = self.current_menu[self.current_index]
-
         if item.submenu:
             self.menu_stack.append((self.current_menu, self.current_index, self.current_top, self.current_title))
             self.current_menu = item.submenu
@@ -445,7 +419,6 @@ class MenuApp:
             self.current_top = 0
             self.current_title = item.title
             return
-
         if item.action is not None:
             item.action()
 
@@ -461,6 +434,9 @@ class MenuApp:
         self.current_top = 0
         self.current_title = "Main Menu"
 
+    # ------------------------------------------------------------------
+    # Key handling
+    # ------------------------------------------------------------------
     def check_home_button(self) -> bool:
         if self.lcd.get_key_state("key3"):
             time.sleep(0.08)
@@ -470,9 +446,6 @@ class MenuApp:
                 return True
         return False
 
-    # ------------------------------------------------------------------
-    # Key handling
-    # ------------------------------------------------------------------
     def read_key(self) -> Optional[str]:
         order = ["up", "down", "left", "right", "press", "key1", "key2", "key3"]
         for name in order:
@@ -504,7 +477,6 @@ class MenuApp:
             if not line:
                 wrapped.append("")
                 continue
-
             chunks = textwrap.wrap(
                 line,
                 width=width,
@@ -513,10 +485,7 @@ class MenuApp:
                 break_long_words=True,
                 break_on_hyphens=False,
             )
-            if chunks:
-                wrapped.extend(chunks)
-            else:
-                wrapped.append("")
+            wrapped.extend(chunks if chunks else [""])
         return wrapped
 
     def show_scrollable_lines(self, title: str, lines: List[str], width: int = 20):
@@ -531,7 +500,6 @@ class MenuApp:
         while True:
             img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
             draw = ImageDraw.Draw(img)
-
             draw.rectangle((0, 0, self.lcd.width, 14), fill=(0, 0, 64))
             draw.text((2, 2), self.fit_text(title, 20), font=self.font, fill=self.text_color)
 
@@ -544,28 +512,23 @@ class MenuApp:
             footer = f"{top_index + 1}-{end_index}/{len(wrapped)}"
             draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
             draw.text((2, self.lcd.height - 12), self.fit_text(footer, 20), font=self.font, fill=(128, 128, 128))
-
             self.lcd.LCD_ShowImage(img)
 
             if self.check_home_button():
                 return
-
             if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                 time.sleep(0.08)
                 return
-
             if self.lcd.get_key_state("up"):
                 if top_index > 0:
                     top_index -= 1
                 self.wait_for_key_release("up")
                 continue
-
             if self.lcd.get_key_state("down"):
                 if top_index < max(0, len(wrapped) - visible_lines):
                     top_index += 1
                 self.wait_for_key_release("down")
                 continue
-
             time.sleep(0.05)
 
     def draw_menu(self):
@@ -573,14 +536,12 @@ class MenuApp:
 
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
         draw = ImageDraw.Draw(img)
-
         draw.rectangle((0, 0, self.lcd.width, 14), fill=(0, 0, 64))
         draw.text((2, 2), self.fit_text(self.current_title, 20), font=self.font, fill=self.text_color)
 
         y = 18
         line_h = 12
         visible_lines = 8
-
         start = self.current_top
         end = min(start + visible_lines, len(self.current_menu))
 
@@ -726,10 +687,12 @@ class MenuApp:
 
         self.lcd.LCD_ShowImage(img)
 
+    # ------------------------------------------------------------------
+    # Confirm / message dialogs
+    # ------------------------------------------------------------------
     def show_message(self, title: str, lines: List[str], wait_for_back: bool = True, delay: float = 0.0):
         img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
         draw = ImageDraw.Draw(img)
-
         draw.rectangle((0, 0, self.lcd.width, 14), fill=(0, 0, 64))
         draw.text((2, 2), self.fit_text(title, 20), font=self.font, fill=self.text_color)
 
@@ -752,7 +715,6 @@ class MenuApp:
             while True:
                 if self.check_home_button():
                     return
-
                 if (
                     self.lcd.get_key_state("left")
                     or self.lcd.get_key_state("key1")
@@ -768,7 +730,6 @@ class MenuApp:
         while True:
             img = Image.new("RGB", (self.lcd.width, self.lcd.height), self.bg_color)
             draw = ImageDraw.Draw(img)
-
             draw.rectangle((0, 0, self.lcd.width, 14), fill=(64, 0, 0))
             draw.text((2, 2), self.fit_text(title, 20), font=self.font, fill=(255, 255, 255))
 
@@ -779,24 +740,16 @@ class MenuApp:
 
             draw.rectangle((0, self.lcd.height - 14, self.lcd.width, self.lcd.height), fill=(16, 16, 16))
             draw.text((2, self.lcd.height - 12), "K2=Yes K1=No K3=Home", font=self.font, fill=(160, 160, 160))
-
             self.lcd.LCD_ShowImage(img)
 
             if self.check_home_button():
                 return False
-
-            if (
-                self.lcd.get_key_state("right")
-                or self.lcd.get_key_state("press")
-                or self.lcd.get_key_state("key2")
-            ):
+            if self.lcd.get_key_state("right") or self.lcd.get_key_state("press") or self.lcd.get_key_state("key2"):
                 time.sleep(0.08)
                 return True
-
             if self.lcd.get_key_state("left") or self.lcd.get_key_state("key1"):
                 time.sleep(0.08)
                 return False
-
             time.sleep(0.05)
 
 
