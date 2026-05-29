@@ -24,7 +24,7 @@
   "ping_count_choices": [4, 10],
   "traceroute_hop_choices": [10, 20, 30],
   "duration_choices": [5, 10, 30],
-  "iperf_port_choices": [5001, 5202, 4711],
+  "iperf_port_choices": [5001, 5201],
   "iperf3_port_choices": [5201, 5202],
   "iperf_direction_choices": [
     ["Normal", false],
